@@ -5,6 +5,12 @@ import pytest
 from app.clients.ground_ctrl import GroundCtrlClient
 from app.models.candidates import Agent, ReviewedCandidate, RunStatus
 
+_Q = "Why do we have eyebrows if they do not actually keep the rain out of our eyes?"
+_A = (
+    "**Eyebrows** serve a surprisingly important role in human communication "
+    "and expression. They help channel sweat and rain away from your eyes."
+)
+
 
 @pytest.fixture()
 def gc_client():
@@ -66,8 +72,8 @@ async def test_submit_candidates(gc_client, httpx_mock):
                     "id": "cand-1",
                     "runId": "run-abc",
                     "agent": "claude",
-                    "questionMd": "Why?",
-                    "answerMd": "Because.",
+                    "questionMd": _Q,
+                    "answerMd": _A,
                     "score": 8,
                     "reviewReason": "Good",
                     "status": "pending",
@@ -80,8 +86,8 @@ async def test_submit_candidates(gc_client, httpx_mock):
     candidates = [
         ReviewedCandidate(
             agent=Agent.CLAUDE,
-            question_md="Why?",
-            answer_md="Because.",
+            question_md=_Q,
+            answer_md=_A,
             score=8,
             review_reason="Good",
         )

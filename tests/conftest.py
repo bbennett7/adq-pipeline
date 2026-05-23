@@ -14,13 +14,22 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
-def _reset_ground_ctrl():
-    """Reset the Ground Ctrl singleton between tests."""
+def _reset_singletons():
+    """Reset all client singletons between tests."""
+    import app.clients.anthropic as anth_mod
+    import app.clients.gemini as gem_mod
     import app.clients.ground_ctrl as gc_mod
+    import app.clients.openai as oai_mod
 
     gc_mod._instance = None
+    anth_mod._client = None
+    oai_mod._client = None
+    gem_mod._client = None
     yield
     gc_mod._instance = None
+    anth_mod._client = None
+    oai_mod._client = None
+    gem_mod._client = None
 
 
 @pytest.fixture()
