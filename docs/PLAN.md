@@ -37,12 +37,12 @@
 
 ## Phase 3: Multi-Model Generation
 
-- [ ] Claude generation — Anthropic SDK, 2 candidates per call
-- [ ] GPT-4o generation — OpenAI SDK, 2 candidates per call
-- [ ] Gemini generation — Google GenAI SDK, 2 candidates per call
-- [ ] Parallel execution — asyncio.gather all three
-- [ ] Generation prompt — shared prompt template with source context
-- [ ] `POST /generate` endpoint working end-to-end
+- [x] Claude generation — Anthropic SDK, 2 candidates per call
+- [x] GPT-4o generation — OpenAI SDK, 2 candidates per call
+- [x] Gemini generation — Google GenAI SDK, 2 candidates per call
+- [x] Parallel execution — asyncio.gather all three
+- [x] Generation prompt — shared prompt template with source context
+- [x] `POST /generate` endpoint working end-to-end
 
 **Done when:** `/generate` returns 6 candidates from 3 models. Each candidate has questionMd + answerMd.
 
