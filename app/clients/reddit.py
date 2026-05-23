@@ -39,6 +39,7 @@ async def fetch_reddit_posts() -> list[SourceItem]:
                         title=d["title"],
                         url=f"https://reddit.com{d['permalink']}",
                         source=f"r/{sub}",
+                        summary=d.get("selftext", "")[:500],
                     )
                 )
         return items

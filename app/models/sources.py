@@ -9,4 +9,5 @@ class SourceItem(BaseModel):
     title: str
     url: str
     source: str
+    summary: str = ""
     published_at: datetime | None = None
