@@ -50,10 +50,10 @@
 
 ## Phase 4: Review + Scoring
 
-- [ ] Review service — Claude scores all 6 candidates 1-10 with one-line reason
-- [ ] Structured output — parse Claude's review into ReviewedCandidate list
-- [ ] Top-3 selection — sort by score, return top 3
-- [ ] `POST /run` fully wired — sources → generate → review → persist to Ground Ctrl
+- [x] Review service — Claude scores all 6 candidates 1-10 with one-line reason
+- [x] Structured output — parse Claude's review into ReviewedCandidate list
+- [x] Top-3 selection — sort by score, return top 3
+- [x] `POST /run` fully wired — sources → generate → review → persist to Ground Ctrl
 
 **Done when:** `/run` completes the full pipeline and Ground Ctrl receives 3 scored candidates.
 
