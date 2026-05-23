@@ -18,6 +18,9 @@ wheels/
 .vscode/
 *.swp
 
+# Claude Code
+.claude/
+
 # Local overrides
 *.local.md
 
