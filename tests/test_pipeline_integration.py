@@ -1,12 +1,14 @@
-"""Integration test: POST /run fetches sources, calls Ground Ctrl, and the pipeline
-fails at the generation step (NotImplementedError) which is expected for Phase 2."""
+"""Integration test: POST /run lifecycle through Ground Ctrl.
+
+Phase 3: generation is implemented, so the pipeline now fails at the review step
+(NotImplementedError). The pipeline catches the error and calls fail_run."""
 
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.models.candidates import Run, RunStatus
+from app.models.candidates import Agent, GeneratedCandidate, Run, RunStatus
 from app.models.sources import SourceItem
 
 FAKE_RUN = Run(
@@ -29,6 +31,18 @@ FAKE_SOURCES = [
     SourceItem(title="Another Post", url="https://example.com/2", source="r/MachineLearning"),
 ]
 
+_Q = "Why do we have eyebrows if they do not keep the rain out?"
+_A = "**Eyebrows** serve a surprisingly important role in human communication. " * 3
+
+FAKE_CANDIDATES = [
+    GeneratedCandidate(agent=Agent.CLAUDE, question_md=_Q, answer_md=_A),
+    GeneratedCandidate(agent=Agent.CLAUDE, question_md=_Q, answer_md=_A),
+    GeneratedCandidate(agent=Agent.GPT4, question_md=_Q, answer_md=_A),
+    GeneratedCandidate(agent=Agent.GPT4, question_md=_Q, answer_md=_A),
+    GeneratedCandidate(agent=Agent.GEMINI, question_md=_Q, answer_md=_A),
+    GeneratedCandidate(agent=Agent.GEMINI, question_md=_Q, answer_md=_A),
+]
+
 
 @pytest.fixture()
 def mock_ground_ctrl():
@@ -45,6 +59,12 @@ def mock_sources():
         yield
 
 
+@pytest.fixture()
+def mock_generation():
+    with patch("app.services.pipeline.generate_candidates", return_value=FAKE_CANDIDATES):
+        yield
+
+
 def test_run_requires_auth(client):
     resp = client.post("/run", json={"date": "2026-05-23"})
     assert resp.status_code == 401
@@ -55,11 +75,11 @@ def test_run_rejects_bad_token(client):
     assert resp.status_code == 401
 
 
-def test_run_fetches_sources_then_fails_at_generation(
-    client_no_raise, auth_headers, mock_ground_ctrl, mock_sources
+def test_run_fails_at_review_step(
+    client_no_raise, auth_headers, mock_ground_ctrl, mock_sources, mock_generation
 ):
-    """Phase 2: POST /run should fetch sources, then fail at generate (NotImplementedError).
-    The pipeline catches the error and calls fail_run on Ground Ctrl."""
+    """POST /run should fetch sources, generate candidates, then fail at review
+    (NotImplementedError). The pipeline catches the error and calls fail_run."""
     resp = client_no_raise.post("/run", json={"date": "2026-05-23"}, headers=auth_headers)
     assert resp.status_code == 500
 
@@ -69,8 +89,8 @@ def test_run_fetches_sources_then_fails_at_generation(
     assert call_args[0][0] == "run-123"
 
 
-async def test_pipeline_creates_run_and_fetches_sources(mock_ground_ctrl, mock_sources):
-    """Verify the pipeline calls Ground Ctrl and fetches sources before generation."""
+async def test_pipeline_fails_at_review(mock_ground_ctrl, mock_sources, mock_generation):
+    """Pipeline creates run, fetches sources, generates candidates, then fails at review."""
     from app.services.pipeline import run_pipeline
 
     with pytest.raises(NotImplementedError):
@@ -80,7 +100,7 @@ async def test_pipeline_creates_run_and_fetches_sources(mock_ground_ctrl, mock_s
     mock_ground_ctrl.fail_run.assert_called_once()
 
 
-async def test_pipeline_uses_today_when_no_date(mock_ground_ctrl, mock_sources):
+async def test_pipeline_uses_today_when_no_date(mock_ground_ctrl, mock_sources, mock_generation):
     from app.services.pipeline import run_pipeline
 
     with patch("app.services.pipeline.today_pt") as mock_today:

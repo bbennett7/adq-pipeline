@@ -64,15 +64,15 @@ class GeneratedCandidate(BaseModel):
     """Raw output from a generation model, before review scoring."""
 
     agent: Agent
-    question_md: str
-    answer_md: str
+    question_md: str = Field(min_length=50, max_length=250)
+    answer_md: str = Field(min_length=50, max_length=1000)
 
 
 class ReviewedCandidate(BaseModel):
     """A candidate after the review pass adds a score and reason."""
 
     agent: Agent
-    question_md: str
-    answer_md: str
+    question_md: str = Field(min_length=50, max_length=250)
+    answer_md: str = Field(min_length=50, max_length=1000)
     score: int = Field(ge=1, le=10)
     review_reason: str
