@@ -61,12 +61,10 @@
 
 ## Phase 5: Styling + Choose
 
-- [ ] Styler service — Claude normalizes content (bold key terms, 1-3 paragraphs, plain prose)
-- [ ] `POST /style` endpoint working
-- [ ] `POST /choose` endpoint — top candidate → resources → style → publish
-- [ ] Wire choose into Ground Ctrl publish flow
+- [x] Styler service — Claude normalizes content (bold key terms, 1-3 paragraphs, plain prose)
+- [x] `POST /choose` endpoint — top candidate → style → publish via Ground Ctrl
 
-**Done when:** `/style` and `/choose` work end-to-end.
+**Done when:** `/choose` works end-to-end.
 
 ---
 
