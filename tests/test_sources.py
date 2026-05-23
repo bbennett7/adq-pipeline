@@ -1,34 +1,41 @@
 from unittest.mock import patch
 
+import httpx
 import pytest
 
 from app.models.sources import SourceItem
 from app.services.sources import fetch_all_sources, fetch_rss_sources
 
+FAKE_RSS_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+  <item>
+    <title>Test Article 1</title>
+    <link>https://example.com/1</link>
+    <description>A summary of article 1</description>
+  </item>
+  <item>
+    <title>Test Article 2</title>
+    <link>https://example.com/2</link>
+    <description>A summary of article 2</description>
+  </item>
+</channel>
+</rss>"""
+
+
+def _mock_all_feeds(httpx_mock):
+    for url in [
+        "https://hnrss.org/frontpage",
+        "https://rss.arxiv.org/rss/cs.AI",
+        "https://www.latent.space/feed",
+    ]:
+        httpx_mock.add_response(url=url, text=FAKE_RSS_XML)
+
 
 @pytest.fixture()
-def _fake_feeds():
-    """Patch feedparser.parse to return canned entries."""
-    fake_feed = type(
-        "Feed",
-        (),
-        {
-            "entries": [
-                {
-                    "title": "Test Article 1",
-                    "link": "https://example.com/1",
-                    "summary": "A summary of article 1",
-                },
-                {
-                    "title": "Test Article 2",
-                    "link": "https://example.com/2",
-                    "summary": "A summary of article 2",
-                },
-            ]
-        },
-    )()
-    with patch("app.services.sources.feedparser.parse", return_value=fake_feed):
-        yield
+def _fake_feeds(httpx_mock):
+    """Mock HTTP responses for all RSS feeds."""
+    _mock_all_feeds(httpx_mock)
 
 
 @pytest.fixture()
@@ -62,17 +69,37 @@ async def test_fetch_all_sources_combines_rss_and_reddit():
     assert len(items) == 6  # RSS only since Reddit returns []
 
 
-async def test_rss_feed_failure_is_graceful():
+async def test_rss_feed_failure_is_graceful(httpx_mock):
     """A single feed failing shouldn't break the whole fetch."""
-    call_count = 0
+    httpx_mock.add_exception(
+        httpx.ConnectError("DNS failure"),
+        url="https://hnrss.org/frontpage",
+    )
+    httpx_mock.add_response(url="https://rss.arxiv.org/rss/cs.AI", text=FAKE_RSS_XML)
+    httpx_mock.add_response(url="https://www.latent.space/feed", text=FAKE_RSS_XML)
+    items = await fetch_rss_sources()
+    assert len(items) == 4  # 2 feeds succeeded with 2 entries each
 
-    def flaky_parse(url):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            raise ConnectionError("DNS failure")
-        return type("Feed", (), {"entries": [{"title": "OK", "link": "https://ok.com"}]})()
 
-    with patch("app.services.sources.feedparser.parse", side_effect=flaky_parse):
-        items = await fetch_rss_sources()
-    assert len(items) == 2  # 2 feeds succeeded with 1 entry each
+async def test_rss_feed_timeout_is_graceful(httpx_mock):
+    """A feed that times out shouldn't block the pipeline."""
+    httpx_mock.add_exception(
+        httpx.ReadTimeout("timed out"),
+        url="https://hnrss.org/frontpage",
+    )
+    httpx_mock.add_response(url="https://rss.arxiv.org/rss/cs.AI", text=FAKE_RSS_XML)
+    httpx_mock.add_response(url="https://www.latent.space/feed", text=FAKE_RSS_XML)
+    items = await fetch_rss_sources()
+    assert len(items) == 4  # 2 feeds succeeded
+
+
+async def test_reddit_failure_does_not_crash_pipeline(httpx_mock):
+    """Reddit going down should not prevent RSS sources from returning."""
+    _mock_all_feeds(httpx_mock)
+    with patch(
+        "app.services.sources.fetch_reddit_posts",
+        side_effect=RuntimeError("Reddit OAuth 500"),
+    ):
+        items = await fetch_all_sources()
+    assert len(items) == 6  # all RSS items still returned
+    assert all(isinstance(i, SourceItem) for i in items)
