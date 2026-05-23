@@ -56,6 +56,22 @@ class GroundCtrlClient:
             resp.raise_for_status()
             return Run(**resp.json()["run"])
 
+    async def choose_candidate(
+        self, run_id: str, candidate_id: str, question_md: str, answer_md: str
+    ) -> dict:
+        """POST /api/pipeline/runs/{runId}/choose — select, style, and publish."""
+        async with self._client() as client:
+            resp = await client.post(
+                f"/api/pipeline/runs/{run_id}/choose",
+                json={
+                    "candidateId": candidate_id,
+                    "questionMd": question_md,
+                    "answerMd": answer_md,
+                },
+            )
+            resp.raise_for_status()
+            return resp.json()
+
 
 _instance: GroundCtrlClient | None = None
 

@@ -115,3 +115,24 @@ async def test_get_run(gc_client, httpx_mock):
     run = await gc_client.get_run("run-abc")
     assert run.id == "run-abc"
     assert run.status == RunStatus.AWAITING_REVIEW
+
+
+async def test_choose_candidate(gc_client, httpx_mock):
+    httpx_mock.add_response(
+        url="https://ground-ctrl.test/api/pipeline/runs/run-abc/choose",
+        method="POST",
+        json={
+            "question": {
+                "id": "q-123",
+                "questionMd": _Q,
+                "answerMd": _A,
+                "status": "published",
+            }
+        },
+    )
+
+    result = await gc_client.choose_candidate("run-abc", "cand-1", _Q, _A)
+    assert result["question"]["id"] == "q-123"
+
+    request = httpx_mock.get_request()
+    assert request.headers["authorization"] == "Bearer test-secret"

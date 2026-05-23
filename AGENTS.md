@@ -22,6 +22,11 @@ Python/FastAPI service for daily question generation at askdumbquestions.ai. Dep
 - `app/auth.py` — shared secret bearer auth
 - `app/dates.py` — PT/UTC date utilities
 
+## Git
+
+- **Never commit without explicit user approval.** Always use the `commit-review` skill to present changes for review before committing.
+- Do not stage, commit, or push unless the user has explicitly said to do so.
+
 ## Conventions
 
 - Pipeline never writes to DB directly — all mutations go through Ground Ctrl HTTP API
