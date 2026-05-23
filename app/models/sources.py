@@ -1,6 +1,4 @@
-from datetime import datetime
-
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class SourceItem(BaseModel):
@@ -9,4 +7,9 @@ class SourceItem(BaseModel):
     title: str
     url: str
     source: str
-    published_at: datetime | None = None
+    summary: str = ""
+
+    @field_validator("summary")
+    @classmethod
+    def truncate_summary(cls, v: str) -> str:
+        return v[:500] if len(v) > 500 else v

@@ -25,10 +25,11 @@
 ## Phase 2: Ground Ctrl Client + Source Fetching
 
 - [x] Ground Ctrl HTTP client — create_run, submit_candidates, fail_run, get_run (stubs wired)
-- [ ] RSS fetcher — feedparser for HN, arxiv, Latent Space, Simon Willison
-- [ ] Reddit client — OAuth token flow, fetch hot posts from 4 subreddits
-- [ ] Source aggregation service — combine RSS + Reddit into SourceItem list
-- [ ] Integration test — mock Ground Ctrl responses, verify run lifecycle
+- [x] RSS fetcher — async httpx fetch with 15s timeout, feedparser for HN, arxiv, Latent Space
+- [x] Reddit client — OAuth token flow, concurrent subreddit fetching with 15s timeout
+- [x] Source aggregation service — combine RSS + Reddit with fault isolation (return_exceptions)
+- [x] Integration test — mock Ground Ctrl responses, verify run lifecycle
+- [x] Hardening — timing-safe auth, summary truncation via model validator, bozo feed logging, graceful degradation at every level
 
 **Done when:** `POST /run` can fetch real sources and call Ground Ctrl (generation still raises NotImplementedError).
 
