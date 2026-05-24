@@ -15,6 +15,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
+    from app.routes.run import wait_for_active_runs
+
+    await wait_for_active_runs()
     await close_anthropic()
     await close_openai()
     await close_gemini()

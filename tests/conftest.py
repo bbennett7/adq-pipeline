@@ -23,13 +23,13 @@ def _reset_singletons():
     anth_mod._client = None
     oai_mod._client = None
     gem_mod._client = None
-    run_mod._active_runs.clear()
+    run_mod._active_tasks.clear()
     yield
     gc_mod._instance = None
     anth_mod._client = None
     oai_mod._client = None
     gem_mod._client = None
-    run_mod._active_runs.clear()
+    run_mod._active_tasks.clear()
 
 
 @pytest.fixture()
