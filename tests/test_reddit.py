@@ -29,10 +29,11 @@ async def test_fetches_from_all_subreddits(httpx_mock):
 
 
 async def test_subreddit_failure_skipped(httpx_mock):
-    httpx_mock.add_response(
-        url=f"https://www.reddit.com/r/{SUBREDDITS[0]}/hot.json?limit=10",
-        status_code=403,
-    )
+    for _ in range(3):
+        httpx_mock.add_response(
+            url=f"https://www.reddit.com/r/{SUBREDDITS[0]}/hot.json?limit=10",
+            status_code=403,
+        )
     for sub in SUBREDDITS[1:]:
         httpx_mock.add_response(
             url=f"https://www.reddit.com/r/{sub}/hot.json?limit=10",
