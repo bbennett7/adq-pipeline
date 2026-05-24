@@ -24,16 +24,31 @@ def _build_review_input(candidates: list[GeneratedCandidate]) -> str:
     return "\n\n".join(entries)
 
 
+def _strip_markdown_fences(raw: str) -> str:
+    text = raw.strip()
+    if text.startswith("```"):
+        first_newline = text.index("\n")
+        text = text[first_newline + 1 :]
+        if text.endswith("```"):
+            text = text[:-3]
+    return text.strip()
+
+
 def _parse_review(raw: str, candidates: list[GeneratedCandidate]) -> list[ReviewedCandidate]:
-    data = json.loads(raw)
+    data = json.loads(_strip_markdown_fences(raw))
     scored = data["reviewed"]
 
+    seen: set[int] = set()
     reviewed = []
     for entry in scored:
         idx = entry["index"]
         if idx < 0 or idx >= len(candidates):
             logger.warning("Review returned out-of-range index %d, skipping", idx)
             continue
+        if idx in seen:
+            logger.warning("Review returned duplicate index %d, skipping", idx)
+            continue
+        seen.add(idx)
         c = candidates[idx]
         reviewed.append(
             ReviewedCandidate(
