@@ -4,6 +4,8 @@ import logging
 from pathlib import Path
 
 from google.genai import types
+from pydantic import BaseModel as _BaseModel
+from pydantic import ValidationError
 
 from app.clients.anthropic import get_client as get_anthropic
 from app.clients.gemini import get_client as get_gemini
@@ -19,6 +21,15 @@ SYSTEM_PROMPT = (_PROMPTS_DIR / "generator.txt").read_text().strip()
 _PROVIDERS = ["Claude", "GPT-4o", "Gemini"]
 
 
+class _CandidateItem(_BaseModel):
+    questionMd: str  # noqa: N815
+    answerMd: str  # noqa: N815
+
+
+class _GenerationResponse(_BaseModel):
+    candidates: list[_CandidateItem]
+
+
 def _build_user_prompt(sources: list[SourceItem]) -> str:
     if not sources:
         raise ValueError("Cannot generate candidates without source material")
@@ -26,19 +37,104 @@ def _build_user_prompt(sources: list[SourceItem]) -> str:
     return "Today's source material:\n" + "\n".join(source_lines)
 
 
-def _parse_candidates(raw: str, agent: Agent) -> list[GeneratedCandidate]:
+def _strip_markdown_fences(raw: str) -> str:
+    text = raw.strip()
+    if text.startswith("```"):
+        first_newline = text.index("\n")
+        text = text[first_newline + 1 :]
+        if text.endswith("```"):
+            text = text[:-3]
+    return text.strip()
+
+
+_MAX_ANSWER_LEN = 1000
+
+
+def _parse_raw_json(raw: str) -> list[dict]:
+    cleaned = _strip_markdown_fences(raw)
     try:
-        data = json.loads(raw)
-        return [
-            GeneratedCandidate(
-                agent=agent,
-                question_md=c["questionMd"],
-                answer_md=c["answerMd"],
+        data = json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Unparseable response: {e}") from e
+    return data.get("candidates", [])
+
+
+def _build_candidates(raw_items: list[dict], agent: Agent) -> list[GeneratedCandidate]:
+    candidates: list[GeneratedCandidate] = []
+    for i, c in enumerate(raw_items):
+        try:
+            candidates.append(
+                GeneratedCandidate(
+                    agent=agent,
+                    question_md=c["questionMd"],
+                    answer_md=c["answerMd"],
+                )
             )
-            for c in data["candidates"]
-        ]
-    except (json.JSONDecodeError, KeyError, TypeError) as e:
-        raise ValueError(f"{agent} returned unparseable response: {e}") from e
+        except (ValidationError, KeyError, TypeError) as e:
+            logger.warning("Skipping invalid candidate %d from %s: %s", i, agent, e)
+    return candidates
+
+
+def _needs_revision(raw_items: list[dict]) -> list[dict]:
+    return [c for c in raw_items if len(c.get("answerMd", "")) > _MAX_ANSWER_LEN]
+
+
+_REVISE_PROMPT = (
+    "The following answer is too long. Rewrite it to be under {limit} characters "
+    "while preserving the key insight and markdown formatting. "
+    "Return ONLY the revised answer text, nothing else.\n\n{answer}"
+)
+
+
+async def _revise_claude(answer: str) -> str:
+    client = get_anthropic()
+    response = await client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=1024,
+        messages=[
+            {
+                "role": "user",
+                "content": _REVISE_PROMPT.format(limit=_MAX_ANSWER_LEN, answer=answer),
+            },
+        ],
+    )
+    return response.content[0].text.strip()
+
+
+async def _revise_gpt4(answer: str) -> str:
+    client = get_openai()
+    response = await client.chat.completions.create(
+        model="gpt-4o",
+        max_tokens=1024,
+        messages=[
+            {
+                "role": "user",
+                "content": _REVISE_PROMPT.format(limit=_MAX_ANSWER_LEN, answer=answer),
+            },
+        ],
+    )
+    return (response.choices[0].message.content or "").strip()
+
+
+async def _revise_gemini(answer: str) -> str:
+    client = get_gemini()
+    response = await client.aio.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=_REVISE_PROMPT.format(limit=_MAX_ANSWER_LEN, answer=answer),
+        config=types.GenerateContentConfig(max_output_tokens=1024),
+    )
+    return (response.text or "").strip()
+
+
+async def _revise_overlong(raw_items: list[dict], revise_fn) -> None:
+    for c in _needs_revision(raw_items):
+        original_len = len(c["answerMd"])
+        logger.info("Revising overlong answer (%d chars) via %s", original_len, revise_fn.__name__)
+        try:
+            c["answerMd"] = await revise_fn(c["answerMd"])
+            logger.info("Revised answer: %d -> %d chars", original_len, len(c["answerMd"]))
+        except Exception as e:
+            logger.warning("Revision failed, will skip candidate: %s", e)
 
 
 async def _generate_claude(sources: list[SourceItem]) -> list[GeneratedCandidate]:
@@ -52,10 +148,12 @@ async def _generate_claude(sources: list[SourceItem]) -> list[GeneratedCandidate
     )
     raw = response.content[0].text
     try:
-        candidates = _parse_candidates(raw, Agent.CLAUDE)
+        raw_items = _parse_raw_json(raw)
     except ValueError:
         logger.error("Claude raw response: %.500s", raw)
         raise
+    await _revise_overlong(raw_items, _revise_claude)
+    candidates = _build_candidates(raw_items, Agent.CLAUDE)
     logger.info("Claude generated %d candidates", len(candidates))
     return candidates
 
@@ -76,10 +174,12 @@ async def _generate_gpt4(sources: list[SourceItem]) -> list[GeneratedCandidate]:
     if raw is None:
         raise ValueError("GPT-4o returned empty content")
     try:
-        candidates = _parse_candidates(raw, Agent.GPT4)
+        raw_items = _parse_raw_json(raw)
     except ValueError:
         logger.error("GPT-4o raw response: %.500s", raw)
         raise
+    await _revise_overlong(raw_items, _revise_gpt4)
+    candidates = _build_candidates(raw_items, Agent.GPT4)
     logger.info("GPT-4o generated %d candidates", len(candidates))
     return candidates
 
@@ -88,20 +188,31 @@ async def _generate_gemini(sources: list[SourceItem]) -> list[GeneratedCandidate
     logger.info("Requesting candidates from Gemini")
     client = get_gemini()
     response = await client.aio.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents=_build_user_prompt(sources),
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
             response_mime_type="application/json",
-            max_output_tokens=1024,
+            response_schema=_GenerationResponse,
+            max_output_tokens=4096,
         ),
     )
     raw = response.text
+    finish = response.candidates[0].finish_reason if response.candidates else None
+    logger.info(
+        "Gemini response: finish_reason=%s, length=%d chars",
+        finish,
+        len(raw) if raw else 0,
+    )
+    if not raw:
+        raise ValueError("Gemini returned empty content")
     try:
-        candidates = _parse_candidates(raw, Agent.GEMINI)
+        raw_items = _parse_raw_json(raw)
     except ValueError:
-        logger.error("Gemini raw response: %.500s", raw)
+        logger.error("Gemini raw response (%d chars): %s", len(raw), raw)
         raise
+    await _revise_overlong(raw_items, _revise_gemini)
+    candidates = _build_candidates(raw_items, Agent.GEMINI)
     logger.info("Gemini generated %d candidates", len(candidates))
     return candidates
 

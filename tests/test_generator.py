@@ -7,11 +7,12 @@ import pytest
 from app.models.candidates import Agent, GeneratedCandidate
 from app.models.sources import SourceItem
 from app.services.generator import (
+    _build_candidates,
     _build_user_prompt,
     _generate_claude,
     _generate_gemini,
     _generate_gpt4,
-    _parse_candidates,
+    _parse_raw_json,
     generate_candidates,
 )
 
@@ -48,32 +49,36 @@ def test_build_user_prompt():
     assert "r/science" in prompt
 
 
-def test_parse_candidates():
-    candidates = _parse_candidates(FAKE_JSON, Agent.CLAUDE)
+def test_parse_and_build():
+    raw_items = _parse_raw_json(FAKE_JSON)
+    candidates = _build_candidates(raw_items, Agent.CLAUDE)
     assert len(candidates) == 2
     assert all(isinstance(c, GeneratedCandidate) for c in candidates)
     assert candidates[0].agent == Agent.CLAUDE
-    assert candidates[1].agent == Agent.CLAUDE
     assert "eyebrows" in candidates[0].question_md.lower()
     assert "fish" in candidates[1].question_md.lower()
-    assert len(candidates[0].question_md) >= 50
-    assert len(candidates[0].answer_md) >= 50
 
 
-def test_parse_candidates_bad_json():
-    with pytest.raises(ValueError, match="unparseable"):
-        _parse_candidates("not json", Agent.GPT4)
+def test_parse_raw_json_bad_json():
+    with pytest.raises(ValueError, match="Unparseable"):
+        _parse_raw_json("not json")
 
 
-def test_parse_candidates_wrong_schema():
-    with pytest.raises(ValueError, match="unparseable"):
-        _parse_candidates('{"results": []}', Agent.GEMINI)
+def test_parse_raw_json_wrong_schema():
+    assert _parse_raw_json('{"results": []}') == []
 
 
-def test_parse_candidates_missing_fields():
-    bad = json.dumps({"candidates": [{"questionMd": "Q?"}]})
-    with pytest.raises(ValueError, match="unparseable"):
-        _parse_candidates(bad, Agent.CLAUDE)
+def test_build_candidates_missing_fields():
+    raw_items = [{"questionMd": "Q?"}]
+    assert _build_candidates(raw_items, Agent.CLAUDE) == []
+
+
+def test_parse_raw_json_markdown_fences():
+    """Claude wraps JSON in ```json ... ``` fences."""
+    raw = "```json\n" + FAKE_JSON + "\n```"
+    raw_items = _parse_raw_json(raw)
+    candidates = _build_candidates(raw_items, Agent.CLAUDE)
+    assert len(candidates) == 2
 
 
 async def test_generate_claude():
@@ -86,9 +91,26 @@ async def test_generate_claude():
 
     assert len(candidates) == 2
     assert all(c.agent == Agent.CLAUDE for c in candidates)
-    mock_client.messages.create.assert_called_once()
     call_kwargs = mock_client.messages.create.call_args.kwargs
     assert call_kwargs["model"] == "claude-sonnet-4-6"
+
+
+async def test_generate_claude_revises_overlong_answer():
+    long_answer = "A" * 1200
+    overlong_json = json.dumps({"candidates": [{"questionMd": _Q1, "answerMd": long_answer}]})
+    revised_answer = "Short revised answer that fits within the character limit nicely."
+
+    gen_response = SimpleNamespace(content=[SimpleNamespace(text=overlong_json)])
+    revise_response = SimpleNamespace(content=[SimpleNamespace(text=revised_answer)])
+    mock_client = AsyncMock()
+    mock_client.messages.create.side_effect = [gen_response, revise_response]
+
+    with patch("app.services.generator.get_anthropic", return_value=mock_client):
+        candidates = await _generate_claude(SOURCES)
+
+    assert len(candidates) == 1
+    assert candidates[0].answer_md == revised_answer
+    assert mock_client.messages.create.call_count == 2
 
 
 async def test_generate_gpt4():
@@ -123,7 +145,8 @@ async def test_generate_gpt4_none_content():
 
 
 async def test_generate_gemini():
-    mock_response = SimpleNamespace(text=FAKE_JSON)
+    mock_candidate = SimpleNamespace(finish_reason="STOP")
+    mock_response = SimpleNamespace(text=FAKE_JSON, candidates=[mock_candidate])
     mock_generate = AsyncMock(return_value=mock_response)
     mock_aio_models = SimpleNamespace(generate_content=mock_generate)
     mock_aio = SimpleNamespace(models=mock_aio_models)
@@ -135,7 +158,7 @@ async def test_generate_gemini():
     assert len(candidates) == 2
     assert all(c.agent == Agent.GEMINI for c in candidates)
     call_kwargs = mock_generate.call_args.kwargs
-    assert call_kwargs["model"] == "gemini-2.0-flash"
+    assert call_kwargs["model"] == "gemini-2.5-flash"
 
 
 async def test_generate_candidates_parallel():

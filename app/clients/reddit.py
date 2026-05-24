@@ -3,18 +3,18 @@ import logging
 
 import httpx
 
-from app.config import get_settings
 from app.models.sources import SourceItem
 
 logger = logging.getLogger(__name__)
 
 SUBREDDITS = ["MachineLearning", "LocalLLaMA", "singularity", "LLMDevs"]
+USER_AGENT = "adq-pipeline/0.1"
 
 
-async def _fetch_subreddit(client: httpx.AsyncClient, token: str, sub: str) -> list[SourceItem]:
+async def _fetch_subreddit(client: httpx.AsyncClient, sub: str) -> list[SourceItem]:
     resp = await client.get(
-        f"https://oauth.reddit.com/r/{sub}/hot",
-        headers={"Authorization": f"Bearer {token}", "User-Agent": "adq-pipeline/0.1"},
+        f"https://www.reddit.com/r/{sub}/hot.json",
+        headers={"User-Agent": USER_AGENT},
         params={"limit": 10},
     )
     resp.raise_for_status()
@@ -34,24 +34,9 @@ async def _fetch_subreddit(client: httpx.AsyncClient, token: str, sub: str) -> l
 
 async def fetch_reddit_posts() -> list[SourceItem]:
     """Fetch top posts from target subreddits."""
-    s = get_settings()
-    if not s.reddit_client_id:
-        logger.info("Reddit credentials not configured, skipping")
-        return []
-
-    auth = (s.reddit_client_id, s.reddit_client_secret)
     async with httpx.AsyncClient(timeout=15) as client:
-        token_resp = await client.post(
-            "https://www.reddit.com/api/v1/access_token",
-            auth=auth,
-            data={"grant_type": "client_credentials"},
-            headers={"User-Agent": "adq-pipeline/0.1"},
-        )
-        token_resp.raise_for_status()
-        token = token_resp.json()["access_token"]
-
         results = await asyncio.gather(
-            *[_fetch_subreddit(client, token, sub) for sub in SUBREDDITS],
+            *[_fetch_subreddit(client, sub) for sub in SUBREDDITS],
             return_exceptions=True,
         )
         items: list[SourceItem] = []
