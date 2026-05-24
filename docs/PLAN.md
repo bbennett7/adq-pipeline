@@ -70,14 +70,11 @@
 
 ## Phase 6: Resource Retrieval
 
-- [ ] Embedding client — OpenAI text-embedding-3-small (1536 dims)
-- [ ] Vector search — query resources table by cosine similarity
-- [ ] Generative fallback — Claude suggests URL when no vector match
+- [ ] Resource suggestion prompt — Claude suggests relevant URLs given a question + answer
+- [ ] Resource service — parse Claude response into structured resources (url, label, source, author)
 - [ ] `POST /retrieve-resources` endpoint working
 
-**Done when:** `/retrieve-resources` returns relevant resources for a given question.
-
-> **Note:** This depends on Ground Ctrl having a resources API — may need to coordinate or stub.
+**Done when:** `/retrieve-resources` returns relevant structured resources for a given question.
 
 ---
 
