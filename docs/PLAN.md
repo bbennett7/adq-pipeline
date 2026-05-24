@@ -78,34 +78,13 @@
 
 ---
 
-## Phase 7: Notifications
+## ~~Phase 7: Notifications~~ (removed — not pipeline's responsibility)
 
-- [ ] OneSignal client — send push notifications
-- [ ] Notification service — candidates_ready, publish_warning, published, nothing_to_publish
-- [ ] Wire into pipeline run (after candidates persisted)
-- [ ] Wire into auto-publish (after publish or on empty)
-
-**Done when:** Push notifications fire at the right moments in the pipeline.
+## ~~Phase 8: Cron + Auto-Publish~~ (removed — not pipeline's responsibility)
 
 ---
 
-## Phase 8: Cron + Auto-Publish
-
-- [ ] APScheduler jobs — 6:00am, 8:45am, 9:00am PT, weekdays only
-- [ ] Auto-publish fallback chain:
-  1. Already scheduled → publish
-  2. Unreviewed run → choose for me
-  3. Unpublished pool → pick + style + publish
-  4. Rejected pool → pick + style + publish
-  5. Nothing → push notification
-- [ ] 8:45am warning — only if run is still `awaiting_review`
-- [ ] DB read queries for auto-publish logic (soft-delete-aware)
-
-**Done when:** The three cron jobs fire correctly and auto-publish works through all 5 fallback levels.
-
----
-
-## Phase 9: Testing + Hardening
+## Phase 7: Testing + Hardening
 
 - [ ] Unit tests — services (generator, reviewer, styler, publisher)
 - [ ] Integration tests — routes with mocked external APIs
@@ -117,7 +96,7 @@
 
 ---
 
-## Phase 10: Deploy
+## Phase 8: Deploy
 
 - [ ] Set Fly.io secrets (all env vars)
 - [ ] First deploy — `fly deploy`
@@ -134,8 +113,6 @@
 
 | Risk | Mitigation |
 |------|------------|
-| Ground Ctrl resources API not built | Phase 6 can be deferred; stub the endpoint |
-| OneSignal setup incomplete | Notifications gracefully no-op when credentials are empty |
 | Reddit API rate limits | Degrade gracefully — RSS sources are sufficient alone |
 | Model API outages | fail_run marks the run as failed; retry via `POST /run` |
 | Python 3.7 on system PATH | Locked to 3.12 via uv + .python-version |
