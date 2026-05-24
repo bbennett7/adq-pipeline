@@ -7,7 +7,7 @@ from app.clients.anthropic import close_client as close_anthropic
 from app.clients.gemini import close_client as close_gemini
 from app.clients.ground_ctrl import close_ground_ctrl
 from app.clients.openai import close_client as close_openai
-from app.routes import health, resources, run
+from app.routes import answers, health, resources, run
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
@@ -32,3 +32,4 @@ app = FastAPI(
 app.include_router(health.router)
 app.include_router(run.router)
 app.include_router(resources.router)
+app.include_router(answers.router)
