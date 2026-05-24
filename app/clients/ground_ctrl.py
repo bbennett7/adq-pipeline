@@ -1,24 +1,52 @@
+import asyncio
+import logging
+
 import httpx
 
 from app.config import get_settings
-from app.models.candidates import ReviewedCandidate, Run
+from app.models.candidates import ReviewedCandidate
+
+logger = logging.getLogger(__name__)
+
+MAX_RETRIES = 3
+RETRY_BACKOFF_BASE = 2
 
 
 class GroundCtrlClient:
     def __init__(self) -> None:
         s = get_settings()
-        self._base = s.ground_ctrl_url.rstrip("/")
-        self._headers = {"Authorization": f"Bearer {s.pipeline_secret}"}
+        self._client = httpx.AsyncClient(
+            base_url=s.ground_ctrl_url.rstrip("/"),
+            headers={"Authorization": f"Bearer {s.pipeline_secret}"},
+            timeout=30,
+        )
 
-    def _client(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(base_url=self._base, headers=self._headers, timeout=30)
+    async def close(self) -> None:
+        await self._client.aclose()
 
-    async def create_run(self, date_str: str) -> Run:
-        """POST /api/pipeline/runs — start or reset a run for the given date."""
-        async with self._client() as client:
-            resp = await client.post("/api/pipeline/runs", json={"date": date_str})
-            resp.raise_for_status()
-            return Run(**resp.json()["run"])
+    async def _post_with_retry(self, path: str, json: dict) -> httpx.Response:
+        last_exc: Exception | None = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                resp = await self._client.post(path, json=json)
+                resp.raise_for_status()
+                return resp
+            except (httpx.HTTPStatusError, httpx.TransportError) as e:
+                last_exc = e
+                if isinstance(e, httpx.HTTPStatusError) and e.response.status_code < 500:
+                    raise
+                if attempt < MAX_RETRIES - 1:
+                    delay = RETRY_BACKOFF_BASE**attempt
+                    logger.warning(
+                        "Ground Ctrl request to %s failed (attempt %d/%d), retrying in %ds: %s",
+                        path,
+                        attempt + 1,
+                        MAX_RETRIES,
+                        delay,
+                        e,
+                    )
+                    await asyncio.sleep(delay)
+        raise last_exc  # type: ignore[misc]
 
     async def submit_candidates(
         self, run_id: str, candidates: list[ReviewedCandidate]
@@ -36,41 +64,13 @@ class GroundCtrlClient:
                 for c in candidates
             ]
         }
-        async with self._client() as client:
-            resp = await client.post(f"/api/pipeline/runs/{run_id}/candidates", json=payload)
-            resp.raise_for_status()
-            return resp.json()["candidates"]
+        resp = await self._post_with_retry(f"/api/pipeline/runs/{run_id}/candidates", payload)
+        return resp.json()["candidates"]
 
-    async def fail_run(self, run_id: str, reason: str | None = None) -> Run:
+    async def fail_run(self, run_id: str, reason: str | None = None) -> None:
         """POST /api/pipeline/runs/{runId}/fail — mark a run as failed."""
         body = {"reason": reason} if reason else {}
-        async with self._client() as client:
-            resp = await client.post(f"/api/pipeline/runs/{run_id}/fail", json=body)
-            resp.raise_for_status()
-            return Run(**resp.json()["run"])
-
-    async def get_run(self, run_id: str) -> Run:
-        """GET /api/pipeline/runs/{runId} — fetch run with candidates."""
-        async with self._client() as client:
-            resp = await client.get(f"/api/pipeline/runs/{run_id}")
-            resp.raise_for_status()
-            return Run(**resp.json()["run"])
-
-    async def choose_candidate(
-        self, run_id: str, candidate_id: str, question_md: str, answer_md: str
-    ) -> dict:
-        """POST /api/pipeline/runs/{runId}/choose — select, style, and publish."""
-        async with self._client() as client:
-            resp = await client.post(
-                f"/api/pipeline/runs/{run_id}/choose",
-                json={
-                    "candidateId": candidate_id,
-                    "questionMd": question_md,
-                    "answerMd": answer_md,
-                },
-            )
-            resp.raise_for_status()
-            return resp.json()
+        await self._post_with_retry(f"/api/pipeline/runs/{run_id}/fail", body)
 
 
 _instance: GroundCtrlClient | None = None
@@ -81,3 +81,10 @@ def get_ground_ctrl() -> GroundCtrlClient:
     if _instance is None:
         _instance = GroundCtrlClient()
     return _instance
+
+
+async def close_ground_ctrl() -> None:
+    global _instance
+    if _instance is not None:
+        await _instance.close()
+        _instance = None

@@ -3,7 +3,7 @@ from unittest.mock import patch
 import pytest
 
 from app.clients.ground_ctrl import GroundCtrlClient
-from app.models.candidates import Agent, ReviewedCandidate, RunStatus
+from app.models.candidates import Agent, ReviewedCandidate
 
 _Q = "Why do we have eyebrows if they do not actually keep the rain out of our eyes?"
 _A = (
@@ -18,28 +18,6 @@ def gc_client():
         mock.return_value.ground_ctrl_url = "https://ground-ctrl.test"
         mock.return_value.pipeline_secret = "test-secret"
         return GroundCtrlClient()
-
-
-async def test_create_run(gc_client, httpx_mock):
-    httpx_mock.add_response(
-        url="https://ground-ctrl.test/api/pipeline/runs",
-        method="POST",
-        json={
-            "run": {
-                "id": "run-abc",
-                "targetDate": "2026-05-23T00:00:00Z",
-                "status": "running",
-                "createdAt": "2026-05-23T06:00:00Z",
-            }
-        },
-    )
-
-    run = await gc_client.create_run("2026-05-23")
-    assert run.id == "run-abc"
-    assert run.status == RunStatus.RUNNING
-
-    request = httpx_mock.get_request()
-    assert request.headers["authorization"] == "Bearer test-secret"
 
 
 async def test_fail_run(gc_client, httpx_mock):
@@ -57,9 +35,10 @@ async def test_fail_run(gc_client, httpx_mock):
         },
     )
 
-    run = await gc_client.fail_run("run-abc", "something broke")
-    assert run.status == RunStatus.FAILED
-    assert run.error_message == "something broke"
+    await gc_client.fail_run("run-abc", "something broke")
+
+    request = httpx_mock.get_request()
+    assert request.headers["authorization"] == "Bearer test-secret"
 
 
 async def test_submit_candidates(gc_client, httpx_mock):
@@ -95,44 +74,3 @@ async def test_submit_candidates(gc_client, httpx_mock):
     result = await gc_client.submit_candidates("run-abc", candidates)
     assert len(result) == 1
     assert result[0]["agent"] == "claude"
-
-
-async def test_get_run(gc_client, httpx_mock):
-    httpx_mock.add_response(
-        url="https://ground-ctrl.test/api/pipeline/runs/run-abc",
-        method="GET",
-        json={
-            "run": {
-                "id": "run-abc",
-                "targetDate": "2026-05-23T00:00:00Z",
-                "status": "awaiting_review",
-                "createdAt": "2026-05-23T06:00:00Z",
-                "candidates": [],
-            }
-        },
-    )
-
-    run = await gc_client.get_run("run-abc")
-    assert run.id == "run-abc"
-    assert run.status == RunStatus.AWAITING_REVIEW
-
-
-async def test_choose_candidate(gc_client, httpx_mock):
-    httpx_mock.add_response(
-        url="https://ground-ctrl.test/api/pipeline/runs/run-abc/choose",
-        method="POST",
-        json={
-            "question": {
-                "id": "q-123",
-                "questionMd": _Q,
-                "answerMd": _A,
-                "status": "published",
-            }
-        },
-    )
-
-    result = await gc_client.choose_candidate("run-abc", "cand-1", _Q, _A)
-    assert result["question"]["id"] == "q-123"
-
-    request = httpx_mock.get_request()
-    assert request.headers["authorization"] == "Bearer test-secret"
