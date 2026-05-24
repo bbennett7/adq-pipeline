@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.auth import verify_token
 from app.models.resources import ResourceSuggestion
@@ -9,14 +9,14 @@ router = APIRouter(dependencies=[Depends(verify_token)])
 
 
 class ResourceRequest(BaseModel):
-    question_md: str
-    answer_md: str
+    question_md: str = Field(max_length=500)
+    answer_md: str = Field(max_length=2000)
 
 
-class ValidateResourcesRequest(BaseModel):
-    question_md: str
-    answer_md: str
-    resources: list[ResourceSuggestion]
+class ChooseResourcesRequest(BaseModel):
+    question_md: str = Field(max_length=500)
+    answer_md: str = Field(max_length=2000)
+    resources: list[ResourceSuggestion] = Field(max_length=20)
 
 
 @router.post("/retrieve-resources")
@@ -26,8 +26,8 @@ async def get_resources(body: ResourceRequest) -> dict:
     return {"resources": resources}
 
 
-@router.post("/validate-resources")
-async def post_validate_resources(body: ValidateResourcesRequest) -> dict:
+@router.post("/choose-resources")
+async def choose_resources(body: ChooseResourcesRequest) -> dict:
     """Select the best 2-4 resources from a candidate list."""
     resource_dicts = [r.model_dump(exclude_none=True) for r in body.resources]
     validated = await validate_resources(body.question_md, body.answer_md, resource_dicts)

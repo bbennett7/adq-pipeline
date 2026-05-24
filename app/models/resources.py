@@ -1,8 +1,8 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ResourceSuggestion(BaseModel):
-    url: str
-    label: str
-    source: str
-    author: str | None = None
+    url: str = Field(max_length=2000)
+    label: str = Field(max_length=500)
+    source: str = Field(max_length=200)
+    author: str | None = Field(default=None, max_length=200)

@@ -51,6 +51,19 @@ async def test_retrieve_resources_returns_parsed_resources():
     assert result[1]["author"] == "Jane Smith"
 
 
+async def test_retrieve_resources_strips_code_fences():
+    fenced = f"```json\n{FAKE_RESOURCES_JSON}\n```"
+    anthropic_client = _mock_anthropic(fenced)
+
+    with patch("app.services.resources.get_client", return_value=anthropic_client):
+        from app.services.resources import retrieve_resources
+
+        result = await retrieve_resources(_Q, _A)
+
+    assert len(result) == 2
+    assert result[0]["url"] == "https://en.wikipedia.org/wiki/Eyebrow"
+
+
 async def test_retrieve_resources_returns_empty_on_malformed_json():
     anthropic_client = _mock_anthropic("not valid json at all")
 
@@ -98,7 +111,7 @@ async def test_retrieve_resources_requires_auth(client):
     assert resp.status_code in (401, 403)
 
 
-# --- validate-resources tests ---
+# --- choose-resources tests ---
 
 _WIKI = "https://en.wikipedia.org/wiki/Eyebrow"
 
@@ -178,12 +191,12 @@ async def test_validate_resources_returns_original_on_parse_error():
     assert result == FIVE_RESOURCES
 
 
-async def test_validate_resources_endpoint(client, auth_headers):
+async def test_choose_resources_endpoint(client, auth_headers):
     anthropic_client = _mock_anthropic(VALIDATED_JSON)
 
     with patch("app.services.resources.get_client", return_value=anthropic_client):
         resp = client.post(
-            "/validate-resources",
+            "/choose-resources",
             json={"question_md": _Q, "answer_md": _A, "resources": FIVE_RESOURCES},
             headers=auth_headers,
         )
@@ -193,9 +206,9 @@ async def test_validate_resources_endpoint(client, auth_headers):
     assert len(data["resources"]) == 3
 
 
-async def test_validate_resources_requires_auth(client):
+async def test_choose_resources_requires_auth(client):
     resp = client.post(
-        "/validate-resources",
+        "/choose-resources",
         json={"question_md": _Q, "answer_md": _A, "resources": FIVE_RESOURCES},
     )
     assert resp.status_code in (401, 403)
