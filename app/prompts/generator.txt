@@ -4,18 +4,23 @@ Rules:
 - The question should be familiar to the user, but the answer insightful.
 - The question and answer should improve the user's understand of modern AI.
 - The question must be related to AI, and AI fields like LLMs, training, hardware, and development.
-- The question should prioritize addressing something very current or very fundamental.
-- If there is nothing current that makes for a strong candidate, create a question on a foundational AI topic.
 - The answer should be real, accurate, and clear — not a joke.
 - Write the question in markdown (questionMd). Keep it to one sentence, under 200 characters. Use markdown sparingly, ephasizing one or maybe two keywords or phrases in bold italics.
 - Write the answer in markdown (answerMd). Use 1-3 short paragraphs. Bold key terms on first use. No bullet lists. Keep each answer under 900 characters.
 - Draw loose inspiration from the provided source material, but do NOT directly summarize or reference it. The question should stand on its own.
-- Each question/answer pair must be on a different topic from the other.
 
-Return exactly 2 candidates as a JSON object with this shape:
+You must return exactly 2 candidates:
+1. A "current" question — inspired by something timely from today's source material. This should feel like it could only be asked this week.
+2. A "foundational" question — about a core AI concept. Foundational topics can range from beginner-friendly ("what is a token?") to more niche or surprising. Aim for variety across days — sometimes a simple 101 question is the right call, other times go deeper. The key is that each question should feel fresh, not like a repeat of something recently asked.
+
+The two candidates must be on different topics from each other.
+
+Return a JSON object with this shape:
 {"candidates": [{"questionMd": "...", "answerMd": "..."}, {"questionMd": "...", "answerMd": "..."}]}
 
 Return ONLY the JSON object, no other text.
+
+The examples below illustrate tone and format only — do NOT reuse these questions or topics. Generate something original every time.
 
 Example questions and answers:
 1. Q: "What is an agent **_harness_**?"
@@ -26,11 +31,11 @@ Example questions and answers:
    A: "CPUs (Central Processing Units) and GPUs (Graphics Processing Units) are both processors, which are the chips that do the actual computing work in a device. /n A **CPU is the main brain of your computer**. It runs your operating system, your browser, your apps — basically everything. It has a handful of powerful cores (usually 4 to 16) that can each handle complicated instructions and switch between tasks quickly. /n In contrast, **GPUs were built with thousands of small, simple cores that all work in parallel**. They were designed to be the chips that drew images on your screen (think rendering games or video), but this same functionality made them optimal for training and running neural networks. Because of their differing structures, **a task that would take a CPU hours can take a GPU minutes**."
 
 Additional examples of good questions:
-4. "What is a **_token_**"? - This is a question that might be generated when there isn't anything super interesting from the daily news.
-5. "Are LLMs **_neutral_** in their responses?" - This is a question that might be generated when there isn't anything super interesting from the daily news, or when something has happened that has brought up public discourse around AI neutrality.
-6. "What is **_OpenClaw_**, the agent everyone is talking about?" - This is a question that would get pulled from very current public discourse around AI.
-7. "What is a **_toolchain_** and why is it important?" - This is a question that is both fundamental, and also could be considered current, based on current dialogue.
-8. "How does Anthropic's **_Opus 4.7_** compare to **_Opus 4.6?_**" - This might be a question generated right after the release of a new model.
+4. "What is a **_token_**"? - This is a foundational question with a creative angle.
+5. "Are LLMs **_neutral_** in their responses?" - This is a foundational question that could also be timely if something has happened in public discourse around AI neutrality.
+6. "What is **_OpenClaw_**, the agent everyone is talking about?" - This is a current question pulled from very current public discourse around AI.
+7. "What is a **_toolchain_** and why is it important?" - This is a foundational question that is also somewhat current, based on current dialogue.
+8. "How does Anthropic's **_Opus 4.7_** compare to **_Opus 4.6?_**" - This is a current question generated right after the release of a new model.
 
 Examples of bad questions:
 1. "Why are **_scammers_** targeting internal Microsoft accounts?": This is unrelated to AI, and doesn't teach the user anything.

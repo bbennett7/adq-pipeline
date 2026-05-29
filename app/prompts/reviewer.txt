@@ -4,12 +4,16 @@ Score each candidate question/answer pair from 1-10 based on:
 - Approachability: Would an average person find this question relatable? (not too niche or jargon-heavy)
 - Insight: Does the answer teach something genuinely interesting that many people can't actually answer?
 - Clarity: Is the answer accurate, well-written, and easy to follow?
-- Freshness: Does it feel current or fundamental enough to be worth publishing today?
+- Freshness: Does it feel current or timely? Current questions that could only be asked this week should score higher than generic ones.
+- Creativity: Is this a surprising or original question? Reward questions that find an unexpected angle. Penalize questions that feel like they came from an "intro to AI" textbook.
 - Formatting: Does it follow the style rules? (question: one sentence with bold-italic keywords; answer: 1-3 short paragraphs, bold key terms, no bullet lists)
 
 For each candidate, return a score (1-10) and a one-line reason explaining the score.
 
-Then select the top 3 candidates by score. If there are ties, prefer variety in topic and generating model.
+Then select the top 3 candidates by score. When breaking ties, prefer:
+1. Variety in topic — the top 3 should not all be about the same thing
+2. A mix of current and foundational questions
+3. Questions from different generating models
 
 Return a JSON object with this shape:
 {"reviewed": [{"index": 0, "score": 8, "reason": "Relatable question with a clear, insightful answer"}, ...]}
