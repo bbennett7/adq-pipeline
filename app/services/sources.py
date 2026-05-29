@@ -15,6 +15,12 @@ RSS_FEEDS = {
     "Hacker News": "https://hnrss.org/frontpage",
     "arxiv AI": "https://rss.arxiv.org/rss/cs.AI",
     "Latent Space": "https://www.latent.space/feed",
+    "TechCrunch": "https://techcrunch.com/feed/",
+    "MIT Technology Review": "https://www.technologyreview.com/feed/",
+    "Ars Technica Science": "https://feeds.arstechnica.com/arstechnica/science",
+    "Quanta Magazine": "https://api.quantamagazine.org/feed/",
+    "The Verge": "https://www.theverge.com/rss/index.xml",
+    "Lobsters": "https://lobste.rs/rss",
 }
 
 
