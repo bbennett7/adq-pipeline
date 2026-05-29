@@ -142,7 +142,7 @@ async def _generate_claude(sources: list[SourceItem]) -> list[GeneratedCandidate
     client = get_anthropic()
     response = await client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=1024,
+        max_tokens=4096,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": _build_user_prompt(sources)}],
     )
@@ -163,7 +163,7 @@ async def _generate_gpt4(sources: list[SourceItem]) -> list[GeneratedCandidate]:
     client = get_openai()
     response = await client.chat.completions.create(
         model="gpt-4o",
-        max_tokens=1024,
+        max_tokens=4096,
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
