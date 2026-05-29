@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 from pathlib import Path
 
 from app.clients.anthropic import get_client
@@ -22,14 +23,11 @@ def _strip_code_fences(text: str) -> str:
 
 
 async def retrieve_resources(question_md: str, answer_md: str) -> list[dict]:
-    """Ask Claude to suggest relevant resources for a question/answer pair.
-
-    Returns a list of resource dicts (url, label, source, author?).
-    On failure, returns an empty list — resource suggestions are non-critical.
-    """
     client = get_client()
     user_input = f"Question: {question_md}\n\nAnswer: {answer_md}"
 
+    start = time.monotonic()
+    logger.info("Claude retrieve call starting (model=claude-sonnet-4-6)")
     async with asyncio.timeout(120):
         response = await client.messages.create(
             model="claude-sonnet-4-6",
@@ -37,7 +35,14 @@ async def retrieve_resources(question_md: str, answer_md: str) -> list[dict]:
             system=RETRIEVE_PROMPT,
             messages=[{"role": "user", "content": user_input}],
         )
+    elapsed = time.monotonic() - start
     raw = response.content[0].text
+    logger.info(
+        "Claude retrieve call completed in %.1fs (input_tokens=%d, output_tokens=%d)",
+        elapsed,
+        response.usage.input_tokens,
+        response.usage.output_tokens,
+    )
 
     try:
         data = json.loads(_strip_code_fences(raw))
@@ -46,16 +51,13 @@ async def retrieve_resources(question_md: str, answer_md: str) -> list[dict]:
         logger.error("Resource retrieval parse failed: %s — raw: %.500s", e, raw)
         return []
 
+    logger.info("Parsed %d resource suggestions", len(suggestions))
     return [s.model_dump(exclude_none=True) for s in suggestions]
 
 
 async def validate_resources(question_md: str, answer_md: str, resources: list[dict]) -> list[dict]:
-    """Select the best 2-4 resources from a candidate list for a question/answer pair.
-
-    Returns the filtered/ranked resource dicts.
-    On failure, returns the original list unchanged.
-    """
     if len(resources) <= 2:
+        logger.info("Skipping validation: only %d resources (<=2)", len(resources))
         return resources
 
     client = get_client()
@@ -64,6 +66,8 @@ async def validate_resources(question_md: str, answer_md: str, resources: list[d
         f"Question: {question_md}\n\nAnswer: {answer_md}\n\nCandidate resources:\n{resources_text}"
     )
 
+    start = time.monotonic()
+    logger.info("Claude validate call starting with %d candidates", len(resources))
     async with asyncio.timeout(120):
         response = await client.messages.create(
             model="claude-sonnet-4-6",
@@ -71,7 +75,14 @@ async def validate_resources(question_md: str, answer_md: str, resources: list[d
             system=VALIDATE_PROMPT,
             messages=[{"role": "user", "content": user_input}],
         )
+    elapsed = time.monotonic() - start
     raw = response.content[0].text
+    logger.info(
+        "Claude validate call completed in %.1fs (input_tokens=%d, output_tokens=%d)",
+        elapsed,
+        response.usage.input_tokens,
+        response.usage.output_tokens,
+    )
 
     try:
         data = json.loads(_strip_code_fences(raw))
@@ -80,4 +91,5 @@ async def validate_resources(question_md: str, answer_md: str, resources: list[d
         logger.error("Resource validation parse failed: %s — raw: %.500s", e, raw)
         return resources
 
+    logger.info("Validated down to %d resources from %d candidates", len(validated), len(resources))
     return [v.model_dump(exclude_none=True) for v in validated]
