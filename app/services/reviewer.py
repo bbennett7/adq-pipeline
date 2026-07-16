@@ -1,41 +1,40 @@
-import json
+import asyncio
 import logging
 from pathlib import Path
 
-from app.clients.anthropic import get_client
+from app.clients.anthropic import WEB_SEARCH_TOOL, get_client, send_with_continuation
+from app.jsonutil import extract_json_object
 from app.models.candidates import GeneratedCandidate, ReviewedCandidate
+from app.retry import with_retries
 
 logger = logging.getLogger(__name__)
 
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 SYSTEM_PROMPT = (_PROMPTS_DIR / "reviewer.txt").read_text().strip()
 
-TOP_N = 3
+TOP_N = 6
 
 
-def _build_review_input(candidates: list[GeneratedCandidate]) -> str:
+def _build_review_input(candidates: list[GeneratedCandidate], recent_questions: list[str]) -> str:
     entries = []
     for i, c in enumerate(candidates):
         entries.append(
-            f"--- Candidate {i} (model: {c.agent.value}) ---\n"
+            f"--- Candidate {i} (model: {c.agent.value}, category: {c.category.value}) ---\n"
             f"Question: {c.question_md}\n"
             f"Answer: {c.answer_md}"
         )
-    return "\n\n".join(entries)
-
-
-def _strip_markdown_fences(raw: str) -> str:
-    text = raw.strip()
-    if text.startswith("```"):
-        first_newline = text.index("\n")
-        text = text[first_newline + 1 :]
-        if text.endswith("```"):
-            text = text[:-3]
-    return text.strip()
+    review_input = "\n\n".join(entries)
+    if recent_questions:
+        recent_lines = [f"- {q}" for q in recent_questions]
+        review_input += (
+            "\n\nQuestions already published or offered as candidates recently "
+            "(penalize candidates that repeat these topics):\n" + "\n".join(recent_lines)
+        )
+    return review_input
 
 
 def _parse_review(raw: str, candidates: list[GeneratedCandidate]) -> list[ReviewedCandidate]:
-    data = json.loads(_strip_markdown_fences(raw))
+    data = extract_json_object(raw)
     scored = data["reviewed"]
 
     seen: set[int] = set()
@@ -56,7 +55,7 @@ def _parse_review(raw: str, candidates: list[GeneratedCandidate]) -> list[Review
                 question_md=c.question_md,
                 answer_md=c.answer_md,
                 score=max(1, min(10, int(entry["score"]))),
-                review_reason=str(entry["reason"])[:200],
+                review_reason=f"[{c.category.value}] {entry['reason']}"[:200],
             )
         )
 
@@ -64,32 +63,46 @@ def _parse_review(raw: str, candidates: list[GeneratedCandidate]) -> list[Review
     return reviewed[:TOP_N]
 
 
-async def review_candidates(
-    candidates: list[GeneratedCandidate],
+async def _review_once(
+    candidates: list[GeneratedCandidate], recent_questions: list[str]
 ) -> list[ReviewedCandidate]:
-    """Score all candidates with Claude. Returns top 3 by score."""
-    if not candidates:
-        raise ValueError("No candidates to review")
-
-    logger.info("Reviewing %d candidates", len(candidates))
     client = get_client()
-    response = await client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=1024,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": _build_review_input(candidates)}],
-    )
-    raw = response.content[0].text
+    async with asyncio.timeout(180):
+        raw, _response = await send_with_continuation(
+            client,
+            model="claude-sonnet-4-6",
+            max_tokens=4096,
+            system=SYSTEM_PROMPT,
+            tools=[WEB_SEARCH_TOOL],
+            messages=[
+                {"role": "user", "content": _build_review_input(candidates, recent_questions)}
+            ],
+        )
 
     try:
         reviewed = _parse_review(raw, candidates)
-    except (json.JSONDecodeError, KeyError, TypeError) as e:
+    except (ValueError, KeyError, TypeError) as e:
         logger.error("Review parse failed: %s — raw: %.500s", e, raw)
         raise ValueError(f"Claude review returned unparseable response: {e}") from e
 
     if not reviewed:
         raise ValueError("Review produced zero valid candidates")
+    return reviewed
 
+
+async def review_candidates(
+    candidates: list[GeneratedCandidate],
+    recent_questions: list[str] | None = None,
+) -> list[ReviewedCandidate]:
+    """Score all candidates with Claude. Returns top TOP_N by score."""
+    if not candidates:
+        raise ValueError("No candidates to review")
+
+    logger.info("Reviewing %d candidates", len(candidates))
+    reviewed = await with_retries(
+        lambda: _review_once(candidates, recent_questions or []),
+        label="Candidate review",
+    )
     logger.info(
         "Review complete — top %d scores: %s",
         len(reviewed),

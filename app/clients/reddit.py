@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 
 import feedparser
 import httpx
@@ -10,6 +11,13 @@ logger = logging.getLogger(__name__)
 
 SUBREDDITS = ["MachineLearning", "LocalLLaMA", "singularity", "LLMDevs"]
 USER_AGENT = "web:askdumbquestions.ai:0.1 (by /u/askdumbquestions)"
+
+# hot.rss includes pinned meta posts that are noise for question generation
+_MEGATHREAD_RE = re.compile(
+    r"self[- ]promotion|who'?s hiring|wants? to be hired|megathread"
+    r"|(monthly|weekly|daily) (discussion|thread)|open thread",
+    re.IGNORECASE,
+)
 
 
 async def _fetch_subreddit(client: httpx.AsyncClient, sub: str) -> list[SourceItem]:
@@ -29,15 +37,21 @@ async def _fetch_subreddit(client: httpx.AsyncClient, sub: str) -> list[SourceIt
 
     feed = feedparser.parse(resp.text)
     items: list[SourceItem] = []
-    for entry in feed.entries[:10]:
+    for entry in feed.entries:
+        title = entry.get("title", "")
+        if _MEGATHREAD_RE.search(title):
+            logger.info("r/%s: skipping pinned/meta post: %s", sub, title)
+            continue
         items.append(
             SourceItem(
-                title=entry.get("title", ""),
+                title=title,
                 url=entry.get("link", ""),
                 source=f"r/{sub}",
                 summary=entry.get("summary", ""),
             )
         )
+        if len(items) >= 10:
+            break
     logger.info("r/%s: fetched %d posts via RSS", sub, len(items))
     for item in items[:3]:
         logger.info("  → %s", item.title)

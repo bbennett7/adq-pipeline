@@ -30,7 +30,8 @@ _A = (
 def _mock_anthropic(response_text: str = FAKE_RESOURCES_JSON) -> AsyncMock:
     mock_client = AsyncMock()
     mock_client.messages.create.return_value = SimpleNamespace(
-        content=[SimpleNamespace(text=response_text)],
+        content=[SimpleNamespace(text=response_text, type="text")],
+        stop_reason="end_turn",
         usage=SimpleNamespace(input_tokens=100, output_tokens=200),
     )
     return mock_client

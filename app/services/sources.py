@@ -13,14 +13,18 @@ RSS_FEED_TIMEOUT = 15
 
 RSS_FEEDS = {
     "Hacker News": "https://hnrss.org/frontpage",
+    "Hacker News AI": "https://hnrss.org/newest?q=AI&points=100",
     "arxiv AI": "https://rss.arxiv.org/rss/cs.AI",
     "Latent Space": "https://www.latent.space/feed",
-    "TechCrunch": "https://techcrunch.com/feed/",
-    "MIT Technology Review": "https://www.technologyreview.com/feed/",
-    "Ars Technica Science": "https://feeds.arstechnica.com/arstechnica/science",
-    "Quanta Magazine": "https://api.quantamagazine.org/feed/",
-    "The Verge": "https://www.theverge.com/rss/index.xml",
-    "Lobsters": "https://lobste.rs/rss",
+    "TechCrunch AI": "https://techcrunch.com/category/artificial-intelligence/feed/",
+    "MIT Technology Review AI": "https://www.technologyreview.com/topic/artificial-intelligence/feed",
+    "Ars Technica AI": "https://arstechnica.com/ai/feed/",
+    "The Verge AI": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",
+    "Simon Willison": "https://simonwillison.net/atom/everything/",
+    "OpenAI News": "https://openai.com/news/rss.xml",
+    "Google DeepMind": "https://deepmind.google/blog/rss.xml",
+    "Hugging Face": "https://huggingface.co/blog/feed.xml",
+    "Import AI": "https://importai.substack.com/feed",
 }
 
 
@@ -46,6 +50,7 @@ async def fetch_rss_sources() -> list[SourceItem]:
     async with httpx.AsyncClient(
         timeout=RSS_FEED_TIMEOUT,
         headers={"User-Agent": "adq-pipeline/0.1"},
+        follow_redirects=True,
     ) as client:
         tasks = [_fetch_feed(client, name, url) for name, url in RSS_FEEDS.items()]
         results = await asyncio.gather(*tasks, return_exceptions=True)

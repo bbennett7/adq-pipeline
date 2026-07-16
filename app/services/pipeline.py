@@ -9,6 +9,17 @@ from app.services.sources import fetch_all_sources
 logger = logging.getLogger(__name__)
 
 
+async def _fetch_recent_questions(gc) -> list[str]:
+    """Recent question history for dedup. A failure here must not kill the run."""
+    try:
+        recent = await gc.get_recent_questions()
+        logger.info("Fetched %d recent questions for dedup", len(recent))
+        return recent
+    except Exception as e:
+        logger.warning("Could not fetch recent questions, proceeding without dedup: %s", e)
+        return []
+
+
 async def run_pipeline(run_id: str) -> dict:
     """Execute the full pipeline: sources -> generate -> review -> persist.
 
@@ -19,15 +30,18 @@ async def run_pipeline(run_id: str) -> dict:
 
     try:
         async with asyncio.timeout(600):
-            sources = await fetch_all_sources()
+            sources, recent = await asyncio.gather(
+                fetch_all_sources(),
+                _fetch_recent_questions(gc),
+            )
             if not sources:
                 raise RuntimeError("No source material fetched from any provider")
             logger.info("Fetched %d source items", len(sources))
 
-            candidates = await generate_candidates(sources)
+            candidates = await generate_candidates(sources, recent)
             logger.info("Generated %d candidates", len(candidates))
 
-            reviewed = await review_candidates(candidates)
+            reviewed = await review_candidates(candidates, recent)
             logger.info("Reviewed — top %d candidates scored", len(reviewed))
 
             persisted = await gc.submit_candidates(run_id, reviewed)

@@ -32,6 +32,19 @@ def _reset_singletons():
     run_mod._active_tasks.clear()
 
 
+@pytest.fixture(autouse=True)
+def _no_retry_sleep(monkeypatch):
+    """Make retry backoff instant so failure-path tests don't sleep."""
+    import types
+
+    import app.retry as retry_mod
+
+    async def _instant(_delay):
+        return None
+
+    monkeypatch.setattr(retry_mod, "asyncio", types.SimpleNamespace(sleep=_instant))
+
+
 @pytest.fixture()
 def client():
     from app.main import app
