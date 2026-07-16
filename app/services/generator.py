@@ -1,17 +1,23 @@
 import asyncio
-import json
 import logging
 from pathlib import Path
 
 from google.genai import types
-from pydantic import BaseModel as _BaseModel
 from pydantic import ValidationError
 
-from app.clients.anthropic import get_client as get_anthropic
+from app.clients.anthropic import (
+    WEB_SEARCH_TOOL,
+    send_with_continuation,
+)
+from app.clients.anthropic import (
+    get_client as get_anthropic,
+)
 from app.clients.gemini import get_client as get_gemini
 from app.clients.openai import get_client as get_openai
-from app.models.candidates import Agent, GeneratedCandidate
+from app.jsonutil import extract_json_object
+from app.models.candidates import Agent, Category, GeneratedCandidate
 from app.models.sources import SourceItem
+from app.retry import with_retries
 
 logger = logging.getLogger(__name__)
 
@@ -21,42 +27,60 @@ SYSTEM_PROMPT = (_PROMPTS_DIR / "generator.txt").read_text().strip()
 _PROVIDERS = ["Claude", "GPT-4o", "Gemini"]
 
 
-class _CandidateItem(_BaseModel):
-    questionMd: str  # noqa: N815
-    answerMd: str  # noqa: N815
+_MAX_PROMPT_ITEMS = 40
+_MAX_PER_SOURCE = 3
 
 
-class _GenerationResponse(_BaseModel):
-    candidates: list[_CandidateItem]
+def _sample_sources(sources: list[SourceItem]) -> list[SourceItem]:
+    """Round-robin up to 3 headlines per source so every feed is represented.
+
+    A flat sources[:N] slice would only ever show the first feeds fetched.
+    """
+    by_source: dict[str, list[SourceItem]] = {}
+    for s in sources:
+        by_source.setdefault(s.source, []).append(s)
+    sampled: list[SourceItem] = []
+    for rank in range(_MAX_PER_SOURCE):
+        for items in by_source.values():
+            if rank < len(items):
+                sampled.append(items[rank])
+                if len(sampled) >= _MAX_PROMPT_ITEMS:
+                    return sampled
+    return sampled
 
 
-def _build_user_prompt(sources: list[SourceItem]) -> str:
+def _build_user_prompt(sources: list[SourceItem], recent_questions: list[str]) -> str:
     if not sources:
         raise ValueError("Cannot generate candidates without source material")
-    source_lines = [f"- {s.title} ({s.source})" for s in sources[:20]]
-    return "Today's source material:\n" + "\n".join(source_lines)
-
-
-def _strip_markdown_fences(raw: str) -> str:
-    text = raw.strip()
-    if text.startswith("```"):
-        first_newline = text.index("\n")
-        text = text[first_newline + 1 :]
-        if text.endswith("```"):
-            text = text[:-3]
-    return text.strip()
+    source_lines = [f"- {s.title} ({s.source})" for s in _sample_sources(sources)]
+    prompt = "Today's source material:\n" + "\n".join(source_lines)
+    if recent_questions:
+        recent_lines = [f"- {q}" for q in recent_questions]
+        prompt += (
+            "\n\nQuestions already published or offered as candidates recently "
+            "(including earlier today) — every candidate you write must be on a "
+            "clearly different topic from ALL of these, not a rephrasing:\n"
+            + "\n".join(recent_lines)
+        )
+    return prompt
 
 
 _MAX_ANSWER_LEN = 1000
 
 
 def _parse_raw_json(raw: str) -> list[dict]:
-    cleaned = _strip_markdown_fences(raw)
     try:
-        data = json.loads(cleaned)
-    except json.JSONDecodeError as e:
+        data = extract_json_object(raw)
+    except ValueError as e:
         raise ValueError(f"Unparseable response: {e}") from e
     return data.get("candidates", [])
+
+
+def _parse_category(raw: object) -> Category:
+    try:
+        return Category(str(raw).strip().lower())
+    except ValueError:
+        return Category.WILDCARD
 
 
 def _build_candidates(raw_items: list[dict], agent: Agent) -> list[GeneratedCandidate]:
@@ -66,6 +90,7 @@ def _build_candidates(raw_items: list[dict], agent: Agent) -> list[GeneratedCand
             candidates.append(
                 GeneratedCandidate(
                     agent=agent,
+                    category=_parse_category(c.get("category")),
                     question_md=c["questionMd"],
                     answer_md=c["answerMd"],
                 )
@@ -79,6 +104,19 @@ def _needs_revision(raw_items: list[dict]) -> list[dict]:
     return [c for c in raw_items if len(c.get("answerMd", "")) > _MAX_ANSWER_LEN]
 
 
+def _truncate_at_sentence(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    truncated = text[:limit]
+    for i in range(len(truncated) - 1, max(limit // 2, -1), -1):
+        if truncated[i] in ".!?" and (i + 1 >= len(truncated) or truncated[i + 1] in " \n"):
+            return truncated[: i + 1]
+    last_space = truncated.rfind(" ")
+    if last_space > limit // 2:
+        return truncated[:last_space]
+    return truncated
+
+
 _REVISE_PROMPT = (
     "The following answer is too long. Rewrite it to be under {limit} characters "
     "while preserving the key insight and markdown formatting. "
@@ -88,7 +126,8 @@ _REVISE_PROMPT = (
 
 async def _revise_claude(answer: str) -> str:
     client = get_anthropic()
-    response = await client.messages.create(
+    raw, _ = await send_with_continuation(
+        client,
         model="claude-sonnet-4-6",
         max_tokens=1024,
         messages=[
@@ -98,7 +137,7 @@ async def _revise_claude(answer: str) -> str:
             },
         ],
     )
-    return response.content[0].text.strip()
+    return raw.strip()
 
 
 async def _revise_gpt4(answer: str) -> str:
@@ -134,19 +173,25 @@ async def _revise_overlong(raw_items: list[dict], revise_fn) -> None:
             c["answerMd"] = await revise_fn(c["answerMd"])
             logger.info("Revised answer: %d -> %d chars", original_len, len(c["answerMd"]))
         except Exception as e:
-            logger.warning("Revision failed, will skip candidate: %s", e)
+            logger.warning("Revision failed: %s", e)
+        if len(c.get("answerMd", "")) > _MAX_ANSWER_LEN:
+            logger.warning("Still %d chars after revision", len(c["answerMd"]))
+            c["answerMd"] = _truncate_at_sentence(c["answerMd"], _MAX_ANSWER_LEN)
 
 
-async def _generate_claude(sources: list[SourceItem]) -> list[GeneratedCandidate]:
+async def _generate_claude(
+    sources: list[SourceItem], recent_questions: list[str]
+) -> list[GeneratedCandidate]:
     logger.info("Requesting candidates from Claude")
     client = get_anthropic()
-    response = await client.messages.create(
+    raw, response = await send_with_continuation(
+        client,
         model="claude-sonnet-4-6",
-        max_tokens=4096,
+        max_tokens=8192,
         system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": _build_user_prompt(sources)}],
+        tools=[WEB_SEARCH_TOOL],
+        messages=[{"role": "user", "content": _build_user_prompt(sources, recent_questions)}],
     )
-    raw = response.content[0].text
     try:
         raw_items = _parse_raw_json(raw)
     except ValueError:
@@ -158,16 +203,21 @@ async def _generate_claude(sources: list[SourceItem]) -> list[GeneratedCandidate
     return candidates
 
 
-async def _generate_gpt4(sources: list[SourceItem]) -> list[GeneratedCandidate]:
+async def _generate_gpt4(
+    sources: list[SourceItem], recent_questions: list[str]
+) -> list[GeneratedCandidate]:
     logger.info("Requesting candidates from GPT-4o")
     client = get_openai()
+    # No web search here: gpt-4o rejects web_search_options, and the
+    # search-preview models reject response_format. JSON reliability wins;
+    # the reviewer verifies accuracy with web search downstream.
     response = await client.chat.completions.create(
         model="gpt-4o",
         max_tokens=4096,
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": _build_user_prompt(sources)},
+            {"role": "user", "content": _build_user_prompt(sources, recent_questions)},
         ],
     )
     raw = response.choices[0].message.content
@@ -184,17 +234,20 @@ async def _generate_gpt4(sources: list[SourceItem]) -> list[GeneratedCandidate]:
     return candidates
 
 
-async def _generate_gemini(sources: list[SourceItem]) -> list[GeneratedCandidate]:
+async def _generate_gemini(
+    sources: list[SourceItem], recent_questions: list[str]
+) -> list[GeneratedCandidate]:
     logger.info("Requesting candidates from Gemini")
     client = get_gemini()
     response = await client.aio.models.generate_content(
         model="gemini-2.5-flash",
-        contents=_build_user_prompt(sources),
+        contents=_build_user_prompt(sources, recent_questions),
+        # Gemini rejects google_search combined with a JSON response mime
+        # type, so rely on the prompt for JSON shape and strip fences on parse.
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
-            response_mime_type="application/json",
-            response_schema=_GenerationResponse,
             max_output_tokens=4096,
+            tools=[types.Tool(google_search=types.GoogleSearch())],
         ),
     )
     raw = response.text
@@ -217,13 +270,16 @@ async def _generate_gemini(sources: list[SourceItem]) -> list[GeneratedCandidate
     return candidates
 
 
-async def generate_candidates(sources: list[SourceItem]) -> list[GeneratedCandidate]:
-    """Run all three models in parallel, returning up to 6 candidates."""
-    async with asyncio.timeout(300):
+async def generate_candidates(
+    sources: list[SourceItem], recent_questions: list[str] | None = None
+) -> list[GeneratedCandidate]:
+    """Run all three models in parallel, returning up to 9 candidates."""
+    recent = recent_questions or []
+    async with asyncio.timeout(420):
         results = await asyncio.gather(
-            _generate_claude(sources),
-            _generate_gpt4(sources),
-            _generate_gemini(sources),
+            with_retries(lambda: _generate_claude(sources, recent), label="Claude generation"),
+            with_retries(lambda: _generate_gpt4(sources, recent), label="GPT-4o generation"),
+            with_retries(lambda: _generate_gemini(sources, recent), label="Gemini generation"),
             return_exceptions=True,
         )
     candidates: list[GeneratedCandidate] = []

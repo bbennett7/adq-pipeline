@@ -9,10 +9,17 @@ class Agent(StrEnum):
     GEMINI = "gemini"
 
 
+class Category(StrEnum):
+    CURRENT = "current"
+    FOUNDATIONAL = "foundational"
+    WILDCARD = "wildcard"
+
+
 class GeneratedCandidate(BaseModel):
     """Raw output from a generation model, before review scoring."""
 
     agent: Agent
+    category: Category = Category.WILDCARD
     question_md: str = Field(min_length=25, max_length=250)
     answer_md: str = Field(min_length=25, max_length=1000)
 

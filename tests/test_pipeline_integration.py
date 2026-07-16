@@ -51,6 +51,7 @@ RUN_ID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 def mock_ground_ctrl():
     gc = AsyncMock()
     gc.submit_candidates.return_value = FAKE_PERSISTED
+    gc.get_recent_questions.return_value = ["What is a **_token_**?"]
     with patch("app.services.pipeline.get_ground_ctrl", return_value=gc):
         yield gc
 
@@ -128,6 +129,20 @@ async def test_pipeline_completes_full_flow(
     assert result["run_id"] == RUN_ID
     assert len(result["candidates"]) == 3
     mock_ground_ctrl.submit_candidates.assert_called_once_with(RUN_ID, FAKE_REVIEWED)
+
+
+async def test_pipeline_survives_recent_questions_failure(
+    mock_ground_ctrl, mock_sources, mock_generation, mock_review
+):
+    """A failure fetching dedup history must not kill the run."""
+    from app.services.pipeline import run_pipeline
+
+    mock_ground_ctrl.get_recent_questions.side_effect = RuntimeError("GC unreachable")
+    result = await run_pipeline(RUN_ID)
+
+    assert result["run_id"] == RUN_ID
+    mock_ground_ctrl.submit_candidates.assert_called_once()
+    mock_ground_ctrl.fail_run.assert_not_called()
 
 
 async def test_pipeline_fails_and_reports(mock_ground_ctrl, mock_sources, mock_generation):

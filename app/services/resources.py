@@ -1,11 +1,11 @@
 import asyncio
 import json
 import logging
-import re
 import time
 from pathlib import Path
 
-from app.clients.anthropic import get_client
+from app.clients.anthropic import WEB_SEARCH_TOOL, get_client, send_with_continuation
+from app.jsonutil import extract_json_object
 from app.models.resources import ResourceSuggestion
 
 logger = logging.getLogger(__name__)
@@ -14,13 +14,6 @@ _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 RETRIEVE_PROMPT = (_PROMPTS_DIR / "resources.txt").read_text().strip()
 VALIDATE_PROMPT = (_PROMPTS_DIR / "validate_resources.txt").read_text().strip()
 
-_CODE_FENCE_RE = re.compile(r"^```(?:json)?\s*\n(.*?)\n```\s*$", re.DOTALL)
-
-
-def _strip_code_fences(text: str) -> str:
-    m = _CODE_FENCE_RE.match(text.strip())
-    return m.group(1) if m else text
-
 
 async def retrieve_resources(question_md: str, answer_md: str) -> list[dict]:
     client = get_client()
@@ -28,15 +21,16 @@ async def retrieve_resources(question_md: str, answer_md: str) -> list[dict]:
 
     start = time.monotonic()
     logger.info("Claude retrieve call starting (model=claude-sonnet-4-6)")
-    async with asyncio.timeout(120):
-        response = await client.messages.create(
+    async with asyncio.timeout(180):
+        raw, response = await send_with_continuation(
+            client,
             model="claude-sonnet-4-6",
-            max_tokens=1024,
+            max_tokens=2048,
             system=RETRIEVE_PROMPT,
+            tools=[WEB_SEARCH_TOOL],
             messages=[{"role": "user", "content": user_input}],
         )
     elapsed = time.monotonic() - start
-    raw = response.content[0].text
     logger.info(
         "Claude retrieve call completed in %.1fs (input_tokens=%d, output_tokens=%d)",
         elapsed,
@@ -45,9 +39,9 @@ async def retrieve_resources(question_md: str, answer_md: str) -> list[dict]:
     )
 
     try:
-        data = json.loads(_strip_code_fences(raw))
+        data = extract_json_object(raw)
         suggestions = [ResourceSuggestion(**r) for r in data["resources"]]
-    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+    except (KeyError, TypeError, ValueError) as e:
         logger.error("Resource retrieval parse failed: %s — raw: %.500s", e, raw)
         return []
 
@@ -68,15 +62,16 @@ async def validate_resources(question_md: str, answer_md: str, resources: list[d
 
     start = time.monotonic()
     logger.info("Claude validate call starting with %d candidates", len(resources))
-    async with asyncio.timeout(120):
-        response = await client.messages.create(
+    async with asyncio.timeout(180):
+        raw, response = await send_with_continuation(
+            client,
             model="claude-sonnet-4-6",
-            max_tokens=1024,
+            max_tokens=2048,
             system=VALIDATE_PROMPT,
+            tools=[WEB_SEARCH_TOOL],
             messages=[{"role": "user", "content": user_input}],
         )
     elapsed = time.monotonic() - start
-    raw = response.content[0].text
     logger.info(
         "Claude validate call completed in %.1fs (input_tokens=%d, output_tokens=%d)",
         elapsed,
@@ -85,9 +80,9 @@ async def validate_resources(question_md: str, answer_md: str, resources: list[d
     )
 
     try:
-        data = json.loads(_strip_code_fences(raw))
+        data = extract_json_object(raw)
         validated = [ResourceSuggestion(**r) for r in data["resources"]]
-    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+    except (KeyError, TypeError, ValueError) as e:
         logger.error("Resource validation parse failed: %s — raw: %.500s", e, raw)
         return resources
 

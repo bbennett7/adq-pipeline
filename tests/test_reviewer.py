@@ -41,7 +41,7 @@ FAKE_REVIEW_JSON = json.dumps(
 
 
 def test_build_review_input():
-    text = _build_review_input(CANDIDATES)
+    text = _build_review_input(CANDIDATES, [])
     assert "Candidate 0" in text
     assert "Candidate 1" in text
     assert "Candidate 2" in text
@@ -49,6 +49,19 @@ def test_build_review_input():
     assert "gpt4" in text
     assert "gemini" in text
     assert "eyebrows" in text.lower()
+    assert "category: wildcard" in text
+    assert "already published or offered" not in text
+
+
+def test_build_review_input_with_recent_questions():
+    text = _build_review_input(CANDIDATES, ["What is a **_token_**?"])
+    assert "already published or offered" in text
+    assert "What is a **_token_**?" in text
+
+
+def test_parse_review_prefixes_category():
+    reviewed = _parse_review(FAKE_REVIEW_JSON, CANDIDATES)
+    assert all(r.review_reason.startswith("[wildcard] ") for r in reviewed)
 
 
 def test_parse_review_returns_top_3():
@@ -110,7 +123,7 @@ def test_parse_review_truncates_long_reason():
 
 
 def test_parse_review_bad_json():
-    with pytest.raises((json.JSONDecodeError, KeyError)):
+    with pytest.raises((ValueError, KeyError)):
         _parse_review("not json", CANDIDATES)
 
 
@@ -120,7 +133,11 @@ def test_parse_review_wrong_schema():
 
 
 async def test_review_candidates_calls_claude():
-    mock_response = SimpleNamespace(content=[SimpleNamespace(text=FAKE_REVIEW_JSON)])
+    mock_response = SimpleNamespace(
+        content=[SimpleNamespace(text=FAKE_REVIEW_JSON, type="text")],
+        stop_reason="end_turn",
+        usage=SimpleNamespace(input_tokens=100, output_tokens=200),
+    )
     mock_client = AsyncMock()
     mock_client.messages.create.return_value = mock_response
 
@@ -132,6 +149,7 @@ async def test_review_candidates_calls_claude():
     mock_client.messages.create.assert_called_once()
     call_kwargs = mock_client.messages.create.call_args.kwargs
     assert call_kwargs["model"] == "claude-sonnet-4-6"
+    assert "tools" in call_kwargs
 
 
 async def test_review_candidates_empty_input():
@@ -140,7 +158,11 @@ async def test_review_candidates_empty_input():
 
 
 async def test_review_candidates_unparseable():
-    mock_response = SimpleNamespace(content=[SimpleNamespace(text="garbage")])
+    mock_response = SimpleNamespace(
+        content=[SimpleNamespace(text="garbage", type="text")],
+        stop_reason="end_turn",
+        usage=SimpleNamespace(input_tokens=100, output_tokens=10),
+    )
     mock_client = AsyncMock()
     mock_client.messages.create.return_value = mock_response
 
@@ -149,3 +171,26 @@ async def test_review_candidates_unparseable():
         pytest.raises(ValueError, match="unparseable"),
     ):
         await review_candidates(CANDIDATES)
+
+    assert mock_client.messages.create.call_count == 3
+
+
+async def test_review_candidates_retries_then_succeeds():
+    good_response = SimpleNamespace(
+        content=[SimpleNamespace(text=FAKE_REVIEW_JSON, type="text")],
+        stop_reason="end_turn",
+        usage=SimpleNamespace(input_tokens=100, output_tokens=200),
+    )
+    bad_response = SimpleNamespace(
+        content=[SimpleNamespace(text="garbage", type="text")],
+        stop_reason="end_turn",
+        usage=SimpleNamespace(input_tokens=100, output_tokens=10),
+    )
+    mock_client = AsyncMock()
+    mock_client.messages.create.side_effect = [bad_response, good_response]
+
+    with patch("app.services.reviewer.get_client", return_value=mock_client):
+        reviewed = await review_candidates(CANDIDATES)
+
+    assert len(reviewed) == 3
+    assert mock_client.messages.create.call_count == 2

@@ -41,6 +41,45 @@ async def test_fail_run(gc_client, httpx_mock):
     assert request.headers["authorization"] == "Bearer test-secret"
 
 
+async def test_get_recent_questions(gc_client, httpx_mock):
+    httpx_mock.add_response(
+        url="https://ground-ctrl.test/api/pipeline/questions/recent?limit=60",
+        method="GET",
+        json={
+            "questions": [
+                {"questionMd": "What is a **_token_**?", "publishedAt": "2026-07-08T16:00:00Z"},
+                {"questionMd": "What is a GPU?", "publishedAt": "2026-07-07T16:00:00Z"},
+            ],
+            "candidateQuestions": [
+                "What is a GPU?",
+                "Why do models hallucinate?",
+            ],
+        },
+    )
+
+    questions = await gc_client.get_recent_questions()
+
+    # Published + offered candidates, merged and deduped, order preserved
+    assert questions == [
+        "What is a **_token_**?",
+        "What is a GPU?",
+        "Why do models hallucinate?",
+    ]
+    request = httpx_mock.get_request()
+    assert request.headers["authorization"] == "Bearer test-secret"
+
+
+async def test_get_recent_questions_without_candidates_key(gc_client, httpx_mock):
+    """Tolerate an older Ground Ctrl deploy that omits candidateQuestions."""
+    httpx_mock.add_response(
+        url="https://ground-ctrl.test/api/pipeline/questions/recent?limit=60",
+        method="GET",
+        json={"questions": [{"questionMd": "What is a GPU?", "publishedAt": None}]},
+    )
+
+    assert await gc_client.get_recent_questions() == ["What is a GPU?"]
+
+
 async def test_submit_candidates(gc_client, httpx_mock):
     httpx_mock.add_response(
         url="https://ground-ctrl.test/api/pipeline/runs/run-abc/candidates",

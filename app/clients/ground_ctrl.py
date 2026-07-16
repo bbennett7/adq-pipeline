@@ -24,11 +24,11 @@ class GroundCtrlClient:
     async def close(self) -> None:
         await self._client.aclose()
 
-    async def _post_with_retry(self, path: str, json: dict) -> httpx.Response:
+    async def _request_with_retry(self, method: str, path: str, **kwargs) -> httpx.Response:
         last_exc: Exception | None = None
         for attempt in range(MAX_RETRIES):
             try:
-                resp = await self._client.post(path, json=json)
+                resp = await self._client.request(method, path, **kwargs)
                 resp.raise_for_status()
                 return resp
             except (httpx.HTTPStatusError, httpx.TransportError) as e:
@@ -47,6 +47,24 @@ class GroundCtrlClient:
                     )
                     await asyncio.sleep(delay)
         raise last_exc  # type: ignore[misc]
+
+    async def _post_with_retry(self, path: str, json: dict) -> httpx.Response:
+        return await self._request_with_retry("POST", path, json=json)
+
+    async def get_recent_questions(self, limit: int = 60) -> list[str]:
+        """GET /api/pipeline/questions/recent — recent question titles for dedup.
+
+        Merges published questions with recently offered candidates (any
+        status, including regenerated-away ones) so generation never repeats
+        a question the owner has already seen.
+        """
+        resp = await self._request_with_retry(
+            "GET", "/api/pipeline/questions/recent", params={"limit": limit}
+        )
+        data = resp.json()
+        merged = [q["questionMd"] for q in data["questions"]]
+        merged.extend(data.get("candidateQuestions", []))
+        return list(dict.fromkeys(merged))
 
     async def submit_candidates(
         self, run_id: str, candidates: list[ReviewedCandidate]
