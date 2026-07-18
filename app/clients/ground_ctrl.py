@@ -90,6 +90,26 @@ class GroundCtrlClient:
         body = {"reason": reason} if reason else {}
         await self._post_with_retry(f"/api/pipeline/runs/{run_id}/fail", body)
 
+    async def check_similarity(self, items: list[dict]) -> list[dict] | None:
+        """POST /api/pipeline/candidates/similarity — repeat-detection scores.
+
+        Each item is {"questionMd": ..., "answerMd": ...}; the response pairs
+        each with its max similarity against the corpus (published questions +
+        past candidates) and against its same-batch siblings.
+
+        Fail-open: returns None on any error (including a Ground Ctrl that
+        doesn't have the endpoint yet) — the similarity gate is a quality
+        filter and must never kill a run.
+        """
+        try:
+            resp = await self._post_with_retry(
+                "/api/pipeline/candidates/similarity", {"candidates": items}
+            )
+            return resp.json()["results"]
+        except Exception:
+            logger.warning("Similarity check failed, gate will be skipped", exc_info=True)
+            return None
+
 
 _instance: GroundCtrlClient | None = None
 

@@ -52,6 +52,8 @@ def mock_ground_ctrl():
     gc = AsyncMock()
     gc.submit_candidates.return_value = FAKE_PERSISTED
     gc.get_recent_questions.return_value = ["What is a **_token_**?"]
+    # None = similarity check unavailable — the gate fails open.
+    gc.check_similarity.return_value = None
     with patch("app.services.pipeline.get_ground_ctrl", return_value=gc):
         yield gc
 
@@ -59,6 +61,12 @@ def mock_ground_ctrl():
 @pytest.fixture()
 def mock_sources():
     with patch("app.services.pipeline.fetch_all_sources", return_value=FAKE_SOURCES):
+        yield
+
+
+@pytest.fixture(autouse=True)
+def mock_moments():
+    with patch("app.services.pipeline.detect_moments", return_value=[]):
         yield
 
 
@@ -100,6 +108,30 @@ def test_run_accepts_and_runs_pipeline(
     assert data["status"] == "accepted"
 
     mock_ground_ctrl.submit_candidates.assert_called_once_with(RUN_ID, FAKE_REVIEWED)
+
+
+def test_gate_filters_before_review(
+    client, auth_headers, mock_ground_ctrl, mock_sources, mock_generation
+):
+    """Similarity results over threshold shrink the slate review receives."""
+    # First candidate is a corpus repeat; the rest are novel.
+    mock_ground_ctrl.check_similarity.return_value = [
+        {
+            "corpusSimilarity": 0.9 if i == 0 else 0.2,
+            "corpusMatch": "What is a token?" if i == 0 else None,
+            "corpusSource": "candidate" if i == 0 else None,
+            "siblingSimilarity": None,
+            "siblingIndex": None,
+        }
+        for i in range(len(FAKE_CANDIDATES))
+    ]
+    review_mock = AsyncMock(return_value=FAKE_REVIEWED)
+    with patch("app.services.pipeline.review_candidates", review_mock):
+        resp = client.post("/run", json={"run_id": RUN_ID}, headers=auth_headers)
+    assert resp.status_code == 202
+
+    reviewed_candidates = review_mock.call_args[0][0]
+    assert len(reviewed_candidates) == len(FAKE_CANDIDATES) - 1
 
 
 def test_run_calls_fail_on_error(

@@ -25,6 +25,7 @@ RSS_FEEDS = {
     "Google DeepMind": "https://deepmind.google/blog/rss.xml",
     "Hugging Face": "https://huggingface.co/blog/feed.xml",
     "Import AI": "https://importai.substack.com/feed",
+    "Techmeme": "https://www.techmeme.com/feed.xml",
 }
 
 
