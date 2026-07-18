@@ -5,6 +5,7 @@ from pathlib import Path
 from app.clients.anthropic import WEB_SEARCH_TOOL, get_client, send_with_continuation
 from app.jsonutil import extract_json_object
 from app.models.candidates import GeneratedCandidate, ReviewedCandidate
+from app.models.moments import Moment
 from app.retry import with_retries
 
 logger = logging.getLogger(__name__)
@@ -15,15 +16,38 @@ SYSTEM_PROMPT = (_PROMPTS_DIR / "reviewer.txt").read_text().strip()
 TOP_N = 6
 
 
-def _build_review_input(candidates: list[GeneratedCandidate], recent_questions: list[str]) -> str:
+def _build_review_input(
+    candidates: list[GeneratedCandidate],
+    recent_questions: list[str],
+    moments: list[Moment] | None = None,
+    near_repeats: dict[int, str] | None = None,
+) -> str:
     entries = []
     for i, c in enumerate(candidates):
-        entries.append(
+        entry = (
             f"--- Candidate {i} (model: {c.agent.value}, category: {c.category.value}) ---\n"
             f"Question: {c.question_md}\n"
             f"Answer: {c.answer_md}"
         )
+        repeat_of = (near_repeats or {}).get(i)
+        if repeat_of:
+            entry += (
+                f"\nNOTE: flagged by the similarity gate as a near-repeat of "
+                f'"{repeat_of}" — it was kept only to fill the slate. '
+                f"Score it 3 or lower unless the angle is genuinely new."
+            )
+        entries.append(entry)
     review_input = "\n\n".join(entries)
+    if moments:
+        moment_lines = [
+            f"- [{m.strength.value}] {m.title} (teachable angle: {m.teachable_angle})"
+            for m in moments
+        ]
+        review_input += (
+            "\n\nToday's detected cultural moments — reward candidates that "
+            "genuinely engage one (especially a strong one); do not reward "
+            "name-dropping without substance:\n" + "\n".join(moment_lines)
+        )
     if recent_questions:
         recent_lines = [f"- {q}" for q in recent_questions]
         review_input += (
@@ -64,7 +88,10 @@ def _parse_review(raw: str, candidates: list[GeneratedCandidate]) -> list[Review
 
 
 async def _review_once(
-    candidates: list[GeneratedCandidate], recent_questions: list[str]
+    candidates: list[GeneratedCandidate],
+    recent_questions: list[str],
+    moments: list[Moment] | None = None,
+    near_repeats: dict[int, str] | None = None,
 ) -> list[ReviewedCandidate]:
     client = get_client()
     async with asyncio.timeout(180):
@@ -75,7 +102,12 @@ async def _review_once(
             system=SYSTEM_PROMPT,
             tools=[WEB_SEARCH_TOOL],
             messages=[
-                {"role": "user", "content": _build_review_input(candidates, recent_questions)}
+                {
+                    "role": "user",
+                    "content": _build_review_input(
+                        candidates, recent_questions, moments, near_repeats
+                    ),
+                }
             ],
         )
 
@@ -93,6 +125,8 @@ async def _review_once(
 async def review_candidates(
     candidates: list[GeneratedCandidate],
     recent_questions: list[str] | None = None,
+    moments: list[Moment] | None = None,
+    near_repeats: dict[int, str] | None = None,
 ) -> list[ReviewedCandidate]:
     """Score all candidates with Claude. Returns top TOP_N by score."""
     if not candidates:
@@ -100,7 +134,7 @@ async def review_candidates(
 
     logger.info("Reviewing %d candidates", len(candidates))
     reviewed = await with_retries(
-        lambda: _review_once(candidates, recent_questions or []),
+        lambda: _review_once(candidates, recent_questions or [], moments, near_repeats),
         label="Candidate review",
     )
     logger.info(

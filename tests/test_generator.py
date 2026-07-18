@@ -85,6 +85,27 @@ def test_sample_sources_caps_total():
     assert len(_sample_sources(sources)) == _MAX_PROMPT_ITEMS
 
 
+def test_build_user_prompt_moments_section():
+    from app.models.moments import Moment, MomentStrength
+    from app.services.generator import _build_user_prompt
+
+    sources = [SourceItem(title="Story", url="https://e.com/1", source="Hacker News")]
+    empty = _build_user_prompt(sources, [])
+    assert "none detected" in empty
+
+    moments = [
+        Moment(
+            title="Model X mania",
+            why_now="Everyone is testing it",
+            teachable_angle="How releases get benchmarked",
+            strength=MomentStrength.STRONG,
+        )
+    ]
+    with_moments = _build_user_prompt(sources, [], moments)
+    assert "[strong] Model X mania" in with_moments
+    assert "teachable angle: How releases get benchmarked" in with_moments
+
+
 def test_build_candidates_categories():
     raw_items = [
         {"category": "current", "questionMd": _Q1, "answerMd": _A1},
@@ -96,8 +117,8 @@ def test_build_candidates_categories():
     assert [c.category for c in candidates] == [
         Category.CURRENT,
         Category.FOUNDATIONAL,
-        Category.WILDCARD,
-        Category.WILDCARD,
+        Category.CULTURAL,
+        Category.CULTURAL,
     ]
 
 

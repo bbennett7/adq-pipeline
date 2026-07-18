@@ -20,7 +20,7 @@ async def test_fetches_from_all_subreddits(httpx_mock):
         )
 
     items = await fetch_reddit_posts()
-    assert len(items) == 4
+    assert len(items) == len(SUBREDDITS)
     assert all(isinstance(i, SourceItem) for i in items)
     assert {i.source for i in items} == {f"r/{s}" for s in SUBREDDITS}
 
@@ -68,4 +68,4 @@ async def test_subreddit_failure_skipped(httpx_mock):
         )
 
     items = await fetch_reddit_posts()
-    assert len(items) == 3
+    assert len(items) == len(SUBREDDITS) - 1

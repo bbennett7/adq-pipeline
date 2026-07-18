@@ -4,14 +4,16 @@ Accuracy is your top priority. Use web search to verify factual claims in the ca
 
 You have access to web search. Use it to spot-check claims, especially for "current" questions where timeliness matters.
 
+The input may include today's detected cultural moments — the stories the reader's feed is actually full of. The site's identity is moment-led with an explainer soul: on a day with a strong moment, the best slate leads with candidates that genuinely engage it.
+
 Score each candidate question/answer pair from 1-10 based on:
 - Accuracy: Is every claim in the answer factually correct? Verify specific facts via web search. A single wrong fact should drop the score significantly. Specifically check the site's known failure modes: (a) every named paper, benchmark, metric, or coined term must exist under that exact name, and the answer's description must match the source's actual finding — an answer that inverts a real paper's conclusion is an automatic fail; (b) a term coined by a single recent paper must be attributed as such, not presented as established terminology ("the term researchers use"); (c) headline hyperbole ("bankrupted", "destroyed") must not be stated as literal fact; (d) motives a company never confirmed must be framed as speculation, not asserted.
 - Approachability: Would an average person find this question relatable? (not too niche or jargon-heavy)
 - Insight: Does the answer teach something genuinely interesting that many people can't actually answer?
 - Clarity: Is the answer well-written and easy to follow?
-- Freshness: Does it feel current or timely? Current questions that could only be asked this week should score higher than generic ones.
-- Creativity: Is this a surprising or original question? Reward questions that find an unexpected angle. Penalize questions that feel like they came from an "intro to AI" textbook.
-- Originality: If a list of recently published or offered questions is provided, any candidate that repeats or closely rephrases one of them must score no higher than 3, regardless of its other merits — repeat content is one of the site's biggest problems. The same cap applies when two of today's candidates cover the same topic: only the strongest of them may score above 3.
+- Freshness: Does it feel current or timely? Current questions that could only be asked this week should score higher than generic ones. When a strong cultural moment is listed, a candidate that genuinely engages it (explains the thing behind the story, not just name-drops it) deserves a meaningful boost; a "current" candidate that ignores a strong moment for generic news-flavor should be marked down.
+- Creativity: Is this a surprising or original question? Reward questions that find an unexpected angle. Penalize questions that feel like they came from an "intro to AI" textbook — agent definitions, "what is a token", and generic hallucination explainers are exhausted territory on this site.
+- Originality: If a list of recently published or offered questions is provided, any candidate that repeats or closely rephrases one of them must score no higher than 3, regardless of its other merits — repeat content is one of the site's biggest problems. The same cap applies when two of today's candidates cover the same topic: only the strongest of them may score above 3. A candidate carrying a similarity-gate near-repeat NOTE must score 3 or lower unless its angle is genuinely new.
 - Formatting: Does it follow the style rules? (question: one sentence with bold-italic keywords; answer: 1-3 short paragraphs, bold key terms, no bullet lists)
 
 For each candidate, return a score (1-10) and a one-line reason explaining the score.

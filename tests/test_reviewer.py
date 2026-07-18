@@ -49,7 +49,7 @@ def test_build_review_input():
     assert "gpt4" in text
     assert "gemini" in text
     assert "eyebrows" in text.lower()
-    assert "category: wildcard" in text
+    assert "category: cultural" in text
     assert "already published or offered" not in text
 
 
@@ -59,9 +59,30 @@ def test_build_review_input_with_recent_questions():
     assert "What is a **_token_**?" in text
 
 
+def test_build_review_input_with_moments_and_near_repeats():
+    from app.models.moments import Moment, MomentStrength
+
+    moments = [
+        Moment(
+            title="Model X release dominates the week",
+            why_now="Released Tuesday, every feed is reacting",
+            teachable_angle="What benchmark scores actually measure",
+            strength=MomentStrength.STRONG,
+        )
+    ]
+    text = _build_review_input(CANDIDATES, [], moments, {1: "What is a token?"})
+    assert "cultural moments" in text
+    assert "Model X release dominates the week" in text
+    assert "near-repeat" in text
+    # The flag lands on candidate 1 only
+    c0, c1 = text.split("--- Candidate 1")
+    assert "near-repeat" not in c0
+    assert 'near-repeat of "What is a token?"' in c1
+
+
 def test_parse_review_prefixes_category():
     reviewed = _parse_review(FAKE_REVIEW_JSON, CANDIDATES)
-    assert all(r.review_reason.startswith("[wildcard] ") for r in reviewed)
+    assert all(r.review_reason.startswith("[cultural] ") for r in reviewed)
 
 
 def test_parse_review_returns_top_3():

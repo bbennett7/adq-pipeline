@@ -16,6 +16,7 @@ from app.clients.gemini import get_client as get_gemini
 from app.clients.openai import get_client as get_openai
 from app.jsonutil import extract_json_object
 from app.models.candidates import Agent, Category, GeneratedCandidate
+from app.models.moments import Moment
 from app.models.sources import SourceItem
 from app.retry import with_retries
 
@@ -49,11 +50,32 @@ def _sample_sources(sources: list[SourceItem]) -> list[SourceItem]:
     return sampled
 
 
-def _build_user_prompt(sources: list[SourceItem], recent_questions: list[str]) -> str:
+def _format_moments(moments: list[Moment]) -> str:
+    if not moments:
+        return (
+            "\n\nToday's cultural moments: none detected — it's a quiet day. "
+            "Do not strain for timeliness; favor discourse-aware and evergreen angles."
+        )
+    lines = []
+    for m in moments:
+        lines.append(
+            f"- [{m.strength.value}] {m.title}\n"
+            f"  why now: {m.why_now}\n"
+            f"  teachable angle: {m.teachable_angle}"
+        )
+    return "\n\nToday's cultural moments (strongest first):\n" + "\n".join(lines)
+
+
+def _build_user_prompt(
+    sources: list[SourceItem],
+    recent_questions: list[str],
+    moments: list[Moment] | None = None,
+) -> str:
     if not sources:
         raise ValueError("Cannot generate candidates without source material")
     source_lines = [f"- {s.title} ({s.source})" for s in _sample_sources(sources)]
     prompt = "Today's source material:\n" + "\n".join(source_lines)
+    prompt += _format_moments(moments or [])
     if recent_questions:
         recent_lines = [f"- {q}" for q in recent_questions]
         prompt += (
@@ -80,7 +102,7 @@ def _parse_category(raw: object) -> Category:
     try:
         return Category(str(raw).strip().lower())
     except ValueError:
-        return Category.WILDCARD
+        return Category.CULTURAL
 
 
 def _build_candidates(raw_items: list[dict], agent: Agent) -> list[GeneratedCandidate]:
@@ -180,7 +202,9 @@ async def _revise_overlong(raw_items: list[dict], revise_fn) -> None:
 
 
 async def _generate_claude(
-    sources: list[SourceItem], recent_questions: list[str]
+    sources: list[SourceItem],
+    recent_questions: list[str],
+    moments: list[Moment] | None = None,
 ) -> list[GeneratedCandidate]:
     logger.info("Requesting candidates from Claude")
     client = get_anthropic()
@@ -190,7 +214,12 @@ async def _generate_claude(
         max_tokens=8192,
         system=SYSTEM_PROMPT,
         tools=[WEB_SEARCH_TOOL],
-        messages=[{"role": "user", "content": _build_user_prompt(sources, recent_questions)}],
+        messages=[
+            {
+                "role": "user",
+                "content": _build_user_prompt(sources, recent_questions, moments),
+            }
+        ],
     )
     try:
         raw_items = _parse_raw_json(raw)
@@ -204,7 +233,9 @@ async def _generate_claude(
 
 
 async def _generate_gpt4(
-    sources: list[SourceItem], recent_questions: list[str]
+    sources: list[SourceItem],
+    recent_questions: list[str],
+    moments: list[Moment] | None = None,
 ) -> list[GeneratedCandidate]:
     logger.info("Requesting candidates from GPT-4o")
     client = get_openai()
@@ -217,7 +248,10 @@ async def _generate_gpt4(
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": _build_user_prompt(sources, recent_questions)},
+            {
+                "role": "user",
+                "content": _build_user_prompt(sources, recent_questions, moments),
+            },
         ],
     )
     raw = response.choices[0].message.content
@@ -235,13 +269,15 @@ async def _generate_gpt4(
 
 
 async def _generate_gemini(
-    sources: list[SourceItem], recent_questions: list[str]
+    sources: list[SourceItem],
+    recent_questions: list[str],
+    moments: list[Moment] | None = None,
 ) -> list[GeneratedCandidate]:
     logger.info("Requesting candidates from Gemini")
     client = get_gemini()
     response = await client.aio.models.generate_content(
         model="gemini-2.5-flash",
-        contents=_build_user_prompt(sources, recent_questions),
+        contents=_build_user_prompt(sources, recent_questions, moments),
         # Gemini rejects google_search combined with a JSON response mime
         # type, so rely on the prompt for JSON shape and strip fences on parse.
         config=types.GenerateContentConfig(
@@ -271,15 +307,23 @@ async def _generate_gemini(
 
 
 async def generate_candidates(
-    sources: list[SourceItem], recent_questions: list[str] | None = None
+    sources: list[SourceItem],
+    recent_questions: list[str] | None = None,
+    moments: list[Moment] | None = None,
 ) -> list[GeneratedCandidate]:
     """Run all three models in parallel, returning up to 9 candidates."""
     recent = recent_questions or []
     async with asyncio.timeout(420):
         results = await asyncio.gather(
-            with_retries(lambda: _generate_claude(sources, recent), label="Claude generation"),
-            with_retries(lambda: _generate_gpt4(sources, recent), label="GPT-4o generation"),
-            with_retries(lambda: _generate_gemini(sources, recent), label="Gemini generation"),
+            with_retries(
+                lambda: _generate_claude(sources, recent, moments), label="Claude generation"
+            ),
+            with_retries(
+                lambda: _generate_gpt4(sources, recent, moments), label="GPT-4o generation"
+            ),
+            with_retries(
+                lambda: _generate_gemini(sources, recent, moments), label="Gemini generation"
+            ),
             return_exceptions=True,
         )
     candidates: list[GeneratedCandidate] = []

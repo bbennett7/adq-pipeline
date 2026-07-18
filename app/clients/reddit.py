@@ -9,7 +9,16 @@ from app.models.sources import SourceItem
 
 logger = logging.getLogger(__name__)
 
-SUBREDDITS = ["MachineLearning", "LocalLLaMA", "singularity", "LLMDevs"]
+SUBREDDITS = [
+    "MachineLearning",
+    "LocalLLaMA",
+    "singularity",
+    "LLMDevs",
+    # Mainstream-user subs: where the site's non-expert reader's AI discourse
+    # actually happens — required for consumer-side moment detection.
+    "ChatGPT",
+    "OpenAI",
+]
 USER_AGENT = "web:askdumbquestions.ai:0.1 (by /u/askdumbquestions)"
 
 # hot.rss includes pinned meta posts that are noise for question generation
