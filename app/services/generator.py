@@ -66,16 +66,32 @@ def _format_moments(moments: list[Moment]) -> str:
     return "\n\nToday's cultural moments (strongest first):\n" + "\n".join(lines)
 
 
+def _format_topic(topic: str) -> str:
+    return (
+        f'\n\nOWNER-REQUESTED TOPIC: "{topic}"\n'
+        "The site owner has asked for candidates about this specific topic today, "
+        "so skip the usual moment-led selection. ALL 3 candidates must be about "
+        "this topic, with the three categories serving as three distinct angles "
+        'on it: "current" = what is happening with it in AI right now (use web '
+        'search to check), "cultural" = the discourse, buzzwords, or vibes around '
+        'it, "foundational" = the core concept underneath it, explained from '
+        "scratch. The three questions must still cover clearly different "
+        "territory from each other, and every question must still teach the "
+        "reader something about AI — if the topic is broad, find its AI angle."
+    )
+
+
 def _build_user_prompt(
     sources: list[SourceItem],
     recent_questions: list[str],
     moments: list[Moment] | None = None,
+    topic: str | None = None,
 ) -> str:
     if not sources:
         raise ValueError("Cannot generate candidates without source material")
     source_lines = [f"- {s.title} ({s.source})" for s in _sample_sources(sources)]
     prompt = "Today's source material:\n" + "\n".join(source_lines)
-    prompt += _format_moments(moments or [])
+    prompt += _format_topic(topic) if topic else _format_moments(moments or [])
     if recent_questions:
         recent_lines = [f"- {q}" for q in recent_questions]
         prompt += (
@@ -205,6 +221,7 @@ async def _generate_claude(
     sources: list[SourceItem],
     recent_questions: list[str],
     moments: list[Moment] | None = None,
+    topic: str | None = None,
 ) -> list[GeneratedCandidate]:
     logger.info("Requesting candidates from Claude")
     client = get_anthropic()
@@ -217,7 +234,7 @@ async def _generate_claude(
         messages=[
             {
                 "role": "user",
-                "content": _build_user_prompt(sources, recent_questions, moments),
+                "content": _build_user_prompt(sources, recent_questions, moments, topic),
             }
         ],
     )
@@ -236,6 +253,7 @@ async def _generate_gpt4(
     sources: list[SourceItem],
     recent_questions: list[str],
     moments: list[Moment] | None = None,
+    topic: str | None = None,
 ) -> list[GeneratedCandidate]:
     logger.info("Requesting candidates from GPT-4o")
     client = get_openai()
@@ -250,7 +268,7 @@ async def _generate_gpt4(
             {"role": "system", "content": SYSTEM_PROMPT},
             {
                 "role": "user",
-                "content": _build_user_prompt(sources, recent_questions, moments),
+                "content": _build_user_prompt(sources, recent_questions, moments, topic),
             },
         ],
     )
@@ -272,12 +290,13 @@ async def _generate_gemini(
     sources: list[SourceItem],
     recent_questions: list[str],
     moments: list[Moment] | None = None,
+    topic: str | None = None,
 ) -> list[GeneratedCandidate]:
     logger.info("Requesting candidates from Gemini")
     client = get_gemini()
     response = await client.aio.models.generate_content(
         model="gemini-2.5-flash",
-        contents=_build_user_prompt(sources, recent_questions, moments),
+        contents=_build_user_prompt(sources, recent_questions, moments, topic),
         # Gemini rejects google_search combined with a JSON response mime
         # type, so rely on the prompt for JSON shape and strip fences on parse.
         config=types.GenerateContentConfig(
@@ -310,19 +329,23 @@ async def generate_candidates(
     sources: list[SourceItem],
     recent_questions: list[str] | None = None,
     moments: list[Moment] | None = None,
+    topic: str | None = None,
 ) -> list[GeneratedCandidate]:
     """Run all three models in parallel, returning up to 9 candidates."""
     recent = recent_questions or []
     async with asyncio.timeout(420):
         results = await asyncio.gather(
             with_retries(
-                lambda: _generate_claude(sources, recent, moments), label="Claude generation"
+                lambda: _generate_claude(sources, recent, moments, topic),
+                label="Claude generation",
             ),
             with_retries(
-                lambda: _generate_gpt4(sources, recent, moments), label="GPT-4o generation"
+                lambda: _generate_gpt4(sources, recent, moments, topic),
+                label="GPT-4o generation",
             ),
             with_retries(
-                lambda: _generate_gemini(sources, recent, moments), label="Gemini generation"
+                lambda: _generate_gemini(sources, recent, moments, topic),
+                label="Gemini generation",
             ),
             return_exceptions=True,
         )

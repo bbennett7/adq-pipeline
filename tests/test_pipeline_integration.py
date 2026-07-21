@@ -107,7 +107,23 @@ def test_run_accepts_and_runs_pipeline(
     assert data["run_id"] == RUN_ID
     assert data["status"] == "accepted"
 
-    mock_ground_ctrl.submit_candidates.assert_called_once_with(RUN_ID, FAKE_REVIEWED)
+    mock_ground_ctrl.submit_candidates.assert_called_once_with(RUN_ID, FAKE_REVIEWED, topic=None)
+
+
+def test_run_accepts_topic(
+    client, auth_headers, mock_ground_ctrl, mock_sources, mock_generation, mock_review
+):
+    """POST /run with a topic strips it and threads it through to persistence."""
+    resp = client.post(
+        "/run",
+        json={"run_id": RUN_ID, "topic": "  open source  "},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 202
+
+    mock_ground_ctrl.submit_candidates.assert_called_once_with(
+        RUN_ID, FAKE_REVIEWED, topic="open source"
+    )
 
 
 def test_gate_filters_before_review(
@@ -160,7 +176,30 @@ async def test_pipeline_completes_full_flow(
 
     assert result["run_id"] == RUN_ID
     assert len(result["candidates"]) == 3
-    mock_ground_ctrl.submit_candidates.assert_called_once_with(RUN_ID, FAKE_REVIEWED)
+    mock_ground_ctrl.submit_candidates.assert_called_once_with(RUN_ID, FAKE_REVIEWED, topic=None)
+
+
+async def test_pipeline_topic_run_skips_moments_and_threads_topic(mock_ground_ctrl, mock_sources):
+    """A topic run never calls zeitgeist detection and passes the topic through."""
+    from app.services.pipeline import run_pipeline
+
+    detect_mock = AsyncMock(return_value=[])
+    generate_mock = AsyncMock(return_value=FAKE_CANDIDATES)
+    review_mock = AsyncMock(return_value=FAKE_REVIEWED)
+    with (
+        patch("app.services.pipeline.detect_moments", detect_mock),
+        patch("app.services.pipeline.generate_candidates", generate_mock),
+        patch("app.services.pipeline.review_candidates", review_mock),
+    ):
+        result = await run_pipeline(RUN_ID, topic="open source")
+
+    assert result["run_id"] == RUN_ID
+    detect_mock.assert_not_called()
+    assert generate_mock.call_args.kwargs["topic"] == "open source"
+    assert review_mock.call_args.kwargs["topic"] == "open source"
+    mock_ground_ctrl.submit_candidates.assert_called_once_with(
+        RUN_ID, FAKE_REVIEWED, topic="open source"
+    )
 
 
 async def test_pipeline_survives_recent_questions_failure(

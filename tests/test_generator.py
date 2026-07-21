@@ -106,6 +106,23 @@ def test_build_user_prompt_moments_section():
     assert "teachable angle: How releases get benchmarked" in with_moments
 
 
+def test_build_user_prompt_topic_replaces_moments():
+    from app.models.moments import Moment, MomentStrength
+
+    moments = [
+        Moment(
+            title="Model X mania",
+            why_now="Everyone is testing it",
+            teachable_angle="How releases get benchmarked",
+            strength=MomentStrength.STRONG,
+        )
+    ]
+    prompt = _build_user_prompt(SOURCES, [], moments, topic="open source")
+    assert 'OWNER-REQUESTED TOPIC: "open source"' in prompt
+    assert "Model X mania" not in prompt
+    assert "none detected" not in prompt
+
+
 def test_build_candidates_categories():
     raw_items = [
         {"category": "current", "questionMd": _Q1, "answerMd": _A1},

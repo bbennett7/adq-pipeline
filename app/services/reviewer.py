@@ -21,6 +21,7 @@ def _build_review_input(
     recent_questions: list[str],
     moments: list[Moment] | None = None,
     near_repeats: dict[int, str] | None = None,
+    topic: str | None = None,
 ) -> str:
     entries = []
     for i, c in enumerate(candidates):
@@ -38,6 +39,15 @@ def _build_review_input(
             )
         entries.append(entry)
     review_input = "\n\n".join(entries)
+    if topic:
+        review_input += (
+            f'\n\nOWNER-REQUESTED TOPIC: "{topic}" — these candidates were '
+            "generated on demand because the site owner asked for questions "
+            "about this topic. Do not penalize them for ignoring today's news "
+            "or cultural moments; score for how well each one teaches the "
+            "reader something about the requested topic. A candidate that "
+            "drifts off the topic should score poorly."
+        )
     if moments:
         moment_lines = [
             f"- [{m.strength.value}] {m.title} (teachable angle: {m.teachable_angle})"
@@ -92,6 +102,7 @@ async def _review_once(
     recent_questions: list[str],
     moments: list[Moment] | None = None,
     near_repeats: dict[int, str] | None = None,
+    topic: str | None = None,
 ) -> list[ReviewedCandidate]:
     client = get_client()
     async with asyncio.timeout(180):
@@ -105,7 +116,7 @@ async def _review_once(
                 {
                     "role": "user",
                     "content": _build_review_input(
-                        candidates, recent_questions, moments, near_repeats
+                        candidates, recent_questions, moments, near_repeats, topic
                     ),
                 }
             ],
@@ -127,6 +138,7 @@ async def review_candidates(
     recent_questions: list[str] | None = None,
     moments: list[Moment] | None = None,
     near_repeats: dict[int, str] | None = None,
+    topic: str | None = None,
 ) -> list[ReviewedCandidate]:
     """Score all candidates with Claude. Returns top TOP_N by score."""
     if not candidates:
@@ -134,7 +146,7 @@ async def review_candidates(
 
     logger.info("Reviewing %d candidates", len(candidates))
     reviewed = await with_retries(
-        lambda: _review_once(candidates, recent_questions or [], moments, near_repeats),
+        lambda: _review_once(candidates, recent_questions or [], moments, near_repeats, topic),
         label="Candidate review",
     )
     logger.info(
