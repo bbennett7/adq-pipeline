@@ -3,7 +3,7 @@ import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.auth import verify_token
 from app.services.pipeline import run_pipeline
@@ -17,6 +17,9 @@ _active_tasks: dict[str, asyncio.Task] = {}
 
 class RunRequest(BaseModel):
     run_id: str
+    # Owner-requested topic: steers generation toward this subject and appends
+    # the results to the run's existing candidate slate.
+    topic: str | None = Field(default=None, max_length=200)
 
     @field_validator("run_id")
     @classmethod
@@ -24,10 +27,17 @@ class RunRequest(BaseModel):
         UUID(v)
         return v
 
+    @field_validator("topic")
+    @classmethod
+    def strip_topic(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return v.strip() or None
 
-async def _run_pipeline_task(run_id: str) -> None:
+
+async def _run_pipeline_task(run_id: str, topic: str | None = None) -> None:
     try:
-        await run_pipeline(run_id)
+        await run_pipeline(run_id, topic=topic)
     except Exception:
         pass
     finally:
@@ -49,6 +59,6 @@ async def trigger_run(body: RunRequest) -> dict:
     if body.run_id in _active_tasks:
         raise HTTPException(409, "Run already in progress")
 
-    task = asyncio.create_task(_run_pipeline_task(body.run_id))
+    task = asyncio.create_task(_run_pipeline_task(body.run_id, body.topic))
     _active_tasks[body.run_id] = task
     return {"run_id": body.run_id, "status": "accepted"}
