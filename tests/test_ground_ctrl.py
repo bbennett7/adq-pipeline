@@ -1,3 +1,4 @@
+import json
 from unittest.mock import patch
 
 import pytest
@@ -113,3 +114,28 @@ async def test_submit_candidates(gc_client, httpx_mock):
     result = await gc_client.submit_candidates("run-abc", candidates)
     assert len(result) == 1
     assert result[0]["agent"] == "claude"
+
+    body = json.loads(httpx_mock.get_requests()[-1].content)
+    assert "topic" not in body["candidates"][0]
+
+
+async def test_submit_candidates_with_topic(gc_client, httpx_mock):
+    httpx_mock.add_response(
+        url="https://ground-ctrl.test/api/pipeline/runs/run-abc/candidates",
+        method="POST",
+        json={"candidates": []},
+    )
+
+    candidates = [
+        ReviewedCandidate(
+            agent=Agent.CLAUDE,
+            question_md=_Q,
+            answer_md=_A,
+            score=8,
+            review_reason="Good",
+        )
+    ]
+    await gc_client.submit_candidates("run-abc", candidates, topic="open source")
+
+    body = json.loads(httpx_mock.get_requests()[-1].content)
+    assert body["candidates"][0]["topic"] == "open source"

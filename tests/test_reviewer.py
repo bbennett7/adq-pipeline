@@ -59,6 +59,12 @@ def test_build_review_input_with_recent_questions():
     assert "What is a **_token_**?" in text
 
 
+def test_build_review_input_with_topic():
+    text = _build_review_input(CANDIDATES, [], topic="open source")
+    assert 'OWNER-REQUESTED TOPIC: "open source"' in text
+    assert "Do not penalize them for ignoring today's news" in text
+
+
 def test_build_review_input_with_moments_and_near_repeats():
     from app.models.moments import Moment, MomentStrength
 

@@ -23,13 +23,17 @@ async def _fetch_recent_questions(gc) -> list[str]:
         return []
 
 
-async def run_pipeline(run_id: str) -> dict:
+async def run_pipeline(run_id: str, topic: str | None = None) -> dict:
     """Execute the full pipeline: sources -> generate -> review -> persist.
+
+    With a topic, this is an owner-requested run: generation is steered toward
+    the topic instead of today's detected moments, and the resulting
+    candidates append to the run's existing slate in Ground Ctrl.
 
     Returns the run and candidate data from Ground Ctrl.
     """
     gc = get_ground_ctrl()
-    logger.info("Started run %s", run_id)
+    logger.info("Started run %s%s", run_id, f" (topic: {topic})" if topic else "")
 
     try:
         async with asyncio.timeout(600):
@@ -42,9 +46,10 @@ async def run_pipeline(run_id: str) -> dict:
                 raise RuntimeError("No source material fetched from any provider")
             logger.info("Fetched %d source items", len(sources))
 
-            moments = await detect_moments(sources)
+            # The topic IS the moment on a topic run — skip zeitgeist detection.
+            moments = [] if topic else await detect_moments(sources)
 
-            candidates = await generate_candidates(sources, recent, moments)
+            candidates = await generate_candidates(sources, recent, moments, topic=topic)
             logger.info("Generated %d candidates", len(candidates))
 
             # Similarity gate: drop near-repeats of anything already
@@ -63,7 +68,7 @@ async def run_pipeline(run_id: str) -> dict:
                 i: g.near_repeat_of for i, g in enumerate(outcome.kept) if g.near_repeat_of
             }
 
-            reviewed = await review_candidates(gated, recent, moments, near_repeats)
+            reviewed = await review_candidates(gated, recent, moments, near_repeats, topic=topic)
             logger.info("Reviewed — top %d candidates scored", len(reviewed))
 
             # Surface the gate flag in the owner-facing review reason.
@@ -77,7 +82,7 @@ async def run_pipeline(run_id: str) -> dict:
                         :300
                     ]
 
-            persisted = await gc.submit_candidates(run_id, reviewed)
+            persisted = await gc.submit_candidates(run_id, reviewed, topic=topic)
             logger.info("Persisted %d candidates to Ground Ctrl", len(persisted))
 
             return {"run_id": run_id, "candidates": persisted}

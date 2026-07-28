@@ -67,9 +67,16 @@ class GroundCtrlClient:
         return list(dict.fromkeys(merged))
 
     async def submit_candidates(
-        self, run_id: str, candidates: list[ReviewedCandidate]
+        self,
+        run_id: str,
+        candidates: list[ReviewedCandidate],
+        topic: str | None = None,
     ) -> list[dict]:
-        """POST /api/pipeline/runs/{runId}/candidates — persist reviewed candidates."""
+        """POST /api/pipeline/runs/{runId}/candidates — persist reviewed candidates.
+
+        On a topic run every candidate carries the owner-requested topic so
+        Ground Ctrl can badge them alongside the daily slate.
+        """
         payload = {
             "candidates": [
                 {
@@ -78,6 +85,7 @@ class GroundCtrlClient:
                     "answerMd": c.answer_md,
                     "score": c.score,
                     "reviewReason": c.review_reason,
+                    **({"topic": topic} if topic else {}),
                 }
                 for c in candidates
             ]
