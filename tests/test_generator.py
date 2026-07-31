@@ -200,62 +200,48 @@ async def test_generate_claude_revises_overlong_answer():
         stop_reason="end_turn",
         usage=SimpleNamespace(input_tokens=100, output_tokens=200),
     )
-    revise_response = SimpleNamespace(
-        content=[SimpleNamespace(text=revised_answer, type="text")],
-        stop_reason="end_turn",
-        usage=SimpleNamespace(input_tokens=100, output_tokens=50),
-    )
     mock_client = AsyncMock()
-    mock_client.messages.create.side_effect = [gen_response, revise_response]
+    mock_client.messages.create.return_value = gen_response
+    mock_revise = AsyncMock(return_value=revised_answer)
 
-    with patch("app.services.generator.get_anthropic", return_value=mock_client):
+    with (
+        patch("app.services.generator.get_anthropic", return_value=mock_client),
+        patch("app.services.generator.revise_with_claude", mock_revise),
+    ):
         candidates = await _generate_claude(SOURCES, [])
 
     assert len(candidates) == 1
     assert candidates[0].answer_md == revised_answer
-    assert mock_client.messages.create.call_count == 2
+    assert mock_revise.call_count == 1
 
 
 async def test_generate_gpt4():
-    mock_message = SimpleNamespace(content=FAKE_JSON)
-    mock_choice = SimpleNamespace(message=mock_message)
-    mock_response = SimpleNamespace(choices=[mock_choice])
-    mock_client = AsyncMock()
-    mock_client.chat.completions.create.return_value = mock_response
+    mock_create = AsyncMock(return_value=FAKE_JSON)
 
-    with patch("app.services.generator.get_openai", return_value=mock_client):
+    with patch("app.services.generator.openai_create_text", mock_create):
         candidates = await _generate_gpt4(SOURCES, [])
 
     assert len(candidates) == 2
     assert all(c.agent == Agent.GPT4 for c in candidates)
-    call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+    call_kwargs = mock_create.call_args.kwargs
     assert call_kwargs["model"] == "gpt-4o"
-    assert call_kwargs["response_format"] == {"type": "json_object"}
+    assert call_kwargs["json_object"] is True
+    # Web search defaults on — GPT answers must not be training-data-only.
+    assert call_kwargs.get("web_search", True) is True
 
 
 async def test_generate_gpt4_none_content():
-    mock_message = SimpleNamespace(content=None)
-    mock_choice = SimpleNamespace(message=mock_message)
-    mock_response = SimpleNamespace(choices=[mock_choice])
-    mock_client = AsyncMock()
-    mock_client.chat.completions.create.return_value = mock_response
-
     with (
-        patch("app.services.generator.get_openai", return_value=mock_client),
+        patch("app.services.generator.openai_create_text", AsyncMock(return_value="")),
         pytest.raises(ValueError, match="empty content"),
     ):
         await _generate_gpt4(SOURCES, [])
 
 
 async def test_generate_gemini():
-    mock_candidate = SimpleNamespace(finish_reason="STOP")
-    mock_response = SimpleNamespace(text=FAKE_JSON, candidates=[mock_candidate])
-    mock_generate = AsyncMock(return_value=mock_response)
-    mock_aio_models = SimpleNamespace(generate_content=mock_generate)
-    mock_aio = SimpleNamespace(models=mock_aio_models)
-    mock_client = SimpleNamespace(aio=mock_aio)
+    mock_generate = AsyncMock(return_value=FAKE_JSON)
 
-    with patch("app.services.generator.get_gemini", return_value=mock_client):
+    with patch("app.services.generator.gemini_generate_text", mock_generate):
         candidates = await _generate_gemini(SOURCES, [])
 
     assert len(candidates) == 2

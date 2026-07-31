@@ -2,7 +2,6 @@ import asyncio
 import logging
 from pathlib import Path
 
-from google.genai import types
 from pydantic import ValidationError
 
 from app.clients.anthropic import (
@@ -12,13 +11,21 @@ from app.clients.anthropic import (
 from app.clients.anthropic import (
     get_client as get_anthropic,
 )
-from app.clients.gemini import get_client as get_gemini
-from app.clients.openai import get_client as get_openai
+from app.clients.gemini import generate_text as gemini_generate_text
+from app.clients.openai import create_text as openai_create_text
 from app.jsonutil import extract_json_object
 from app.models.candidates import Agent, Category, GeneratedCandidate
 from app.models.moments import Moment
 from app.models.sources import SourceItem
 from app.retry import with_retries
+from app.services.answer_text import (
+    MAX_ANSWER_LEN,
+    enforce_length,
+    revise_with_claude,
+    revise_with_gemini,
+    revise_with_gpt4,
+    sanitize_answer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -103,9 +110,6 @@ def _build_user_prompt(
     return prompt
 
 
-_MAX_ANSWER_LEN = 1000
-
-
 def _parse_raw_json(raw: str) -> list[dict]:
     try:
         data = extract_json_object(raw)
@@ -129,7 +133,7 @@ def _build_candidates(raw_items: list[dict], agent: Agent) -> list[GeneratedCand
                 GeneratedCandidate(
                     agent=agent,
                     category=_parse_category(c.get("category")),
-                    question_md=c["questionMd"],
+                    question_md=sanitize_answer(c["questionMd"]),
                     answer_md=c["answerMd"],
                 )
             )
@@ -138,83 +142,15 @@ def _build_candidates(raw_items: list[dict], agent: Agent) -> list[GeneratedCand
     return candidates
 
 
-def _needs_revision(raw_items: list[dict]) -> list[dict]:
-    return [c for c in raw_items if len(c.get("answerMd", "")) > _MAX_ANSWER_LEN]
-
-
-def _truncate_at_sentence(text: str, limit: int) -> str:
-    if len(text) <= limit:
-        return text
-    truncated = text[:limit]
-    for i in range(len(truncated) - 1, max(limit // 2, -1), -1):
-        if truncated[i] in ".!?" and (i + 1 >= len(truncated) or truncated[i + 1] in " \n"):
-            return truncated[: i + 1]
-    last_space = truncated.rfind(" ")
-    if last_space > limit // 2:
-        return truncated[:last_space]
-    return truncated
-
-
-_REVISE_PROMPT = (
-    "The following answer is too long. Rewrite it to be under {limit} characters "
-    "while preserving the key insight and markdown formatting. "
-    "Return ONLY the revised answer text, nothing else.\n\n{answer}"
-)
-
-
-async def _revise_claude(answer: str) -> str:
-    client = get_anthropic()
-    raw, _ = await send_with_continuation(
-        client,
-        model="claude-sonnet-4-6",
-        max_tokens=1024,
-        messages=[
-            {
-                "role": "user",
-                "content": _REVISE_PROMPT.format(limit=_MAX_ANSWER_LEN, answer=answer),
-            },
-        ],
-    )
-    return raw.strip()
-
-
-async def _revise_gpt4(answer: str) -> str:
-    client = get_openai()
-    response = await client.chat.completions.create(
-        model="gpt-4o",
-        max_tokens=1024,
-        messages=[
-            {
-                "role": "user",
-                "content": _REVISE_PROMPT.format(limit=_MAX_ANSWER_LEN, answer=answer),
-            },
-        ],
-    )
-    return (response.choices[0].message.content or "").strip()
-
-
-async def _revise_gemini(answer: str) -> str:
-    client = get_gemini()
-    response = await client.aio.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=_REVISE_PROMPT.format(limit=_MAX_ANSWER_LEN, answer=answer),
-        config=types.GenerateContentConfig(max_output_tokens=1024),
-    )
-    return (response.text or "").strip()
-
-
-async def _revise_overlong(raw_items: list[dict], revise_fn) -> None:
-    for c in _needs_revision(raw_items):
-        original_len = len(c["answerMd"])
-        logger.info("Revising overlong answer (%d chars) via %s", original_len, revise_fn.__name__)
-        try:
-            c["answerMd"] = await revise_fn(c["answerMd"])
-            logger.info("Revised answer: %d -> %d chars", original_len, len(c["answerMd"]))
-        except Exception as e:
-            logger.warning("Revision failed: %s", e)
-        if len(c.get("answerMd", "")) > _MAX_ANSWER_LEN:
-            logger.warning("Still %d chars after revision", len(c["answerMd"]))
-            c["answerMd"] = _truncate_at_sentence(c["answerMd"], _MAX_ANSWER_LEN)
+async def _normalize_answers(raw_items: list[dict], revise_fn, label: str) -> None:
+    """Clean provider markup out of every answer and bring over-long ones down."""
+    for c in raw_items:
+        answer = c.get("answerMd")
+        if not isinstance(answer, str):
+            continue
+        c["answerMd"] = await enforce_length(
+            answer, revise_fn, limit=MAX_ANSWER_LEN, label=f"{label} answer"
+        )
 
 
 async def _generate_claude(
@@ -243,7 +179,7 @@ async def _generate_claude(
     except ValueError:
         logger.error("Claude raw response: %.500s", raw)
         raise
-    await _revise_overlong(raw_items, _revise_claude)
+    await _normalize_answers(raw_items, revise_with_claude, "Claude")
     candidates = _build_candidates(raw_items, Agent.CLAUDE)
     logger.info("Claude generated %d candidates", len(candidates))
     return candidates
@@ -256,31 +192,21 @@ async def _generate_gpt4(
     topic: str | None = None,
 ) -> list[GeneratedCandidate]:
     logger.info("Requesting candidates from GPT-4o")
-    client = get_openai()
-    # No web search here: gpt-4o rejects web_search_options, and the
-    # search-preview models reject response_format. JSON reliability wins;
-    # the reviewer verifies accuracy with web search downstream.
-    response = await client.chat.completions.create(
+    raw = await openai_create_text(
         model="gpt-4o",
-        max_tokens=4096,
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": _build_user_prompt(sources, recent_questions, moments, topic),
-            },
-        ],
+        system=SYSTEM_PROMPT,
+        user=_build_user_prompt(sources, recent_questions, moments, topic),
+        max_output_tokens=4096,
+        json_object=True,
     )
-    raw = response.choices[0].message.content
-    if raw is None:
+    if not raw:
         raise ValueError("GPT-4o returned empty content")
     try:
         raw_items = _parse_raw_json(raw)
     except ValueError:
         logger.error("GPT-4o raw response: %.500s", raw)
         raise
-    await _revise_overlong(raw_items, _revise_gpt4)
+    await _normalize_answers(raw_items, revise_with_gpt4, "GPT-4o")
     candidates = _build_candidates(raw_items, Agent.GPT4)
     logger.info("GPT-4o generated %d candidates", len(candidates))
     return candidates
@@ -293,33 +219,18 @@ async def _generate_gemini(
     topic: str | None = None,
 ) -> list[GeneratedCandidate]:
     logger.info("Requesting candidates from Gemini")
-    client = get_gemini()
-    response = await client.aio.models.generate_content(
+    raw = await gemini_generate_text(
         model="gemini-2.5-flash",
         contents=_build_user_prompt(sources, recent_questions, moments, topic),
-        # Gemini rejects google_search combined with a JSON response mime
-        # type, so rely on the prompt for JSON shape and strip fences on parse.
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            max_output_tokens=4096,
-            tools=[types.Tool(google_search=types.GoogleSearch())],
-        ),
+        system=SYSTEM_PROMPT,
+        max_output_tokens=8192,
     )
-    raw = response.text
-    finish = response.candidates[0].finish_reason if response.candidates else None
-    logger.info(
-        "Gemini response: finish_reason=%s, length=%d chars",
-        finish,
-        len(raw) if raw else 0,
-    )
-    if not raw:
-        raise ValueError("Gemini returned empty content")
     try:
         raw_items = _parse_raw_json(raw)
     except ValueError:
         logger.error("Gemini raw response (%d chars): %s", len(raw), raw)
         raise
-    await _revise_overlong(raw_items, _revise_gemini)
+    await _normalize_answers(raw_items, revise_with_gemini, "Gemini")
     candidates = _build_candidates(raw_items, Agent.GEMINI)
     logger.info("Gemini generated %d candidates", len(candidates))
     return candidates
