@@ -41,7 +41,10 @@ Rules:
 - The question must be related to AI, and AI fields like LLMs, training, hardware, and development.
 - The answer must be factually accurate. Do not fabricate statistics, dates, names, or technical details. If you cannot verify a claim, leave it out.
 - Write the question in markdown (questionMd). Keep it to one sentence, under 200 characters. Use markdown sparingly, emphasizing one or maybe two keywords or phrases in bold italics.
-- Write the answer in markdown (answerMd). Use 1-3 short paragraphs. Bold key terms on first use. No bullet lists. Keep each answer under 900 characters.
+- Write the answer in markdown (answerMd). Use 1-3 short paragraphs. Bold key terms on first use. No bullet lists.
+- LENGTH IS A HARD LIMIT: each answer must be under 900 characters. Plan the answer to fit before you start writing — an answer that runs long gets sent back to be rewritten. Say less rather than starting a fourth idea you cannot finish. Always finish your final sentence.
+- Separate paragraphs with a real line break (`\n\n` inside the JSON string). Never write a literal `/n` or `\n` as visible text.
+- Plain markdown only. No HTML, no `<cite>` tags, no citation markers, no footnote numbers, no source indexes — web search is for verifying facts, not for annotating the answer. If a source matters, name it in the prose ("OpenAI said...").
 - Draw loose inspiration from the provided source material, but do NOT directly summarize or reference it. The question should stand on its own.
 
 Return a JSON object with this shape:

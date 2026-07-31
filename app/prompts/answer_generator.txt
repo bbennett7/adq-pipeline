@@ -14,7 +14,11 @@ Claim verification rules — these are the site's most common factual failures, 
 
 Rules:
 - The answer must be factually accurate. Do not fabricate statistics, dates, names, or technical details. If you cannot verify a claim, leave it out.
-- Write the answer in markdown (answerMd). Use 1-3 short paragraphs. Bold key terms on first use. No bullet lists. Keep the answer under 900 characters.
+- Write the answer in markdown (answerMd). Use 1-3 short paragraphs. Bold key terms on first use. No bullet lists.
+- LENGTH IS A HARD LIMIT: the answer must be under 900 characters. Plan the answer to fit before you start writing — an answer that runs long gets sent back to be rewritten. Say less rather than starting a fourth idea you cannot finish.
+- Always finish your final sentence. Never trail off, and never end on an unfinished thought.
+- Separate paragraphs with a real line break (`\n\n` inside the JSON string). Never write a literal `/n` or `\n` as visible text.
+- Plain markdown only. No HTML, no `<cite>` tags, no citation markers, no footnote numbers, no source indexes — web search is for verifying facts, not for annotating the answer. If a source matters, name it in the prose ("OpenAI said...").
 - Write in plain prose. Be direct and conversational, but informative.
 - The answer should improve the reader's understanding of the topic.
 
@@ -25,4 +29,4 @@ Return ONLY the JSON object, no other text.
 
 Example question and answer:
 Q: "How is a **_GPU_** different than a **_CPU_**?"
-A: "CPUs (Central Processing Units) and GPUs (Graphics Processing Units) are both processors, which are the chips that do the actual computing work in a device. /n A **CPU is the main brain of your computer**. It runs your operating system, your browser, your apps — basically everything. It has a handful of powerful cores (usually 4 to 16) that can each handle complicated instructions and switch between tasks quickly. /n In contrast, **GPUs were built with thousands of small, simple cores that all work in parallel**. They were designed to be the chips that drew images on your screen (think rendering games or video), but this same functionality made them optimal for training and running neural networks. Because of their differing structures, **a task that would take a CPU hours can take a GPU minutes**."
+A: "CPUs (Central Processing Units) and GPUs (Graphics Processing Units) are both processors, which are the chips that do the actual computing work in a device.\n\nA **CPU is the main brain of your computer**. It runs your operating system, your browser, your apps — basically everything. It has a handful of powerful cores (usually 4 to 16) that can each handle complicated instructions and switch between tasks quickly.\n\nIn contrast, **GPUs were built with thousands of small, simple cores that all work in parallel**. They were designed to be the chips that drew images on your screen (think rendering games or video), but this same functionality made them optimal for training and running neural networks. Because of their differing structures, **a task that would take a CPU hours can take a GPU minutes**."
