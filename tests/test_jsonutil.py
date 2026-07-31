@@ -38,3 +38,18 @@ def test_no_json_raises():
 def test_top_level_array_rejected():
     with pytest.raises(ValueError, match="No JSON object"):
         extract_json_object("[1, 2, 3]")
+
+
+def test_recovers_json_with_real_newlines_inside_a_string():
+    raw = '{"answerMd": "First paragraph.\n\nSecond paragraph."}'
+    assert extract_json_object(raw)["answerMd"] == "First paragraph.\n\nSecond paragraph."
+
+
+def test_recovers_fenced_json_with_real_newlines_inside_a_string():
+    raw = '```json\n{"answerMd": "First line.\n\nSecond line."}\n```'
+    assert extract_json_object(raw)["answerMd"] == "First line.\n\nSecond line."
+
+
+def test_keeps_escaped_quotes_intact():
+    raw = '{"answerMd": "He said \\"hello\\".\nThen left."}'
+    assert extract_json_object(raw)["answerMd"] == 'He said "hello".\nThen left.'
