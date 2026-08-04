@@ -1,7 +1,12 @@
 from unittest.mock import AsyncMock
 
+import pytest
+
+from app.errors import TruncatedOutputError
 from app.services.answer_text import (
     MAX_ANSWER_LEN,
+    drop_incomplete_tail,
+    ends_on_complete_sentence,
     enforce_length,
     sanitize_answer,
     trim_to_sentence,
@@ -153,3 +158,62 @@ async def test_enforce_length_measures_after_stripping_cite_tags():
 
     revise.assert_not_called()
     assert "<cite" not in result
+
+
+def test_ends_on_complete_sentence_accepts_trailing_markdown():
+    assert ends_on_complete_sentence("The model stops early. **That is the bug.**")
+    assert ends_on_complete_sentence('She asked, "why now?"')
+    assert not ends_on_complete_sentence(
+        "Defenders counter that **determined bad actors find workarounds anyway**"
+    )
+
+
+def test_drop_incomplete_tail_cuts_back_to_the_last_finished_sentence():
+    truncated = (
+        "Open weights lower the barrier for bad actors, since guardrails are just "
+        "fine-tuning that can be undone. Defenders counter that **determined bad "
+        "actors find workarounds anyway"
+    )
+    repaired = drop_incomplete_tail(truncated)
+    assert repaired.endswith("fine-tuning that can be undone.")
+    assert "Defenders counter" not in repaired
+    # A dangling bold marker must not survive the cut.
+    assert repaired.count("**") % 2 == 0
+
+
+def test_drop_incomplete_tail_leaves_a_finished_answer_alone():
+    finished = "A benchmark is a standardized test. It stops being useful once saturated."
+    assert drop_incomplete_tail(finished) == finished
+
+
+def test_drop_incomplete_tail_keeps_text_with_no_complete_sentence():
+    # Nothing to salvage — the caller's error handling beats an empty answer.
+    fragment = "The first thing to understand about attention is that"
+    assert drop_incomplete_tail(fragment) == fragment
+
+
+@pytest.mark.asyncio
+async def test_enforce_length_repairs_a_truncated_answer_without_calling_the_model():
+    revise = AsyncMock()
+    truncated = "Benchmarks measure model performance. Saturation happens when scores"
+
+    result = await enforce_length(truncated, revise)
+
+    assert result == "Benchmarks measure model performance."
+    revise.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_enforce_length_retries_when_the_revision_itself_is_truncated():
+    long_answer = "This sentence is complete. " * 60
+    revise = AsyncMock(
+        side_effect=[
+            TruncatedOutputError("ran out of room"),
+            "A short, complete rewrite of the answer.",
+        ]
+    )
+
+    result = await enforce_length(long_answer, revise)
+
+    assert result == "A short, complete rewrite of the answer."
+    assert revise.await_count == 2

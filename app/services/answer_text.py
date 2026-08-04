@@ -17,6 +17,7 @@ from app.clients.anthropic import get_client as get_anthropic
 from app.clients.anthropic import send_with_continuation
 from app.clients.gemini import generate_text as gemini_generate_text
 from app.clients.openai import create_text as openai_create_text
+from app.errors import TruncatedOutputError
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,50 @@ def _balance_emphasis(text: str) -> str:
         head, _, tail = text.rpartition("**")
         text = (head + tail).rstrip()
     return text
+
+
+# Terminal punctuation, optionally followed by the markers that legitimately
+# close a sentence: quotes, brackets, and markdown emphasis.
+_CLOSERS = r"[\)\]\"'’”*_`]*"
+_COMPLETE_END_RE = re.compile(rf"[.!?…]{_CLOSERS}$")
+_SENTENCE_END_RE = re.compile(rf"[.!?…]{_CLOSERS}")
+
+
+def ends_on_complete_sentence(text: str) -> bool:
+    """True when the text finishes a thought rather than stopping mid-sentence."""
+    return bool(_COMPLETE_END_RE.search(text.rstrip()))
+
+
+def drop_incomplete_tail(text: str) -> str:
+    """Cut back to the last finished sentence.
+
+    A provider that hits its output-token ceiling stops mid-word, and the
+    result is short enough that no length check ever looks at it — which is how
+    a half-written sentence reaches the site. Answers are prose only (the
+    prompts forbid bullet lists), so trailing text with no terminal punctuation
+    is always an unfinished sentence, never a legitimate ending.
+
+    Text with no complete sentence in it at all is returned untouched: there is
+    nothing to salvage, and the caller's error handling is a better outcome
+    than an empty answer.
+    """
+    stripped = text.rstrip()
+    if not stripped or ends_on_complete_sentence(stripped):
+        return text
+
+    last_end = None
+    for match in _SENTENCE_END_RE.finditer(stripped):
+        last_end = match.end()
+    if last_end is None:
+        return text
+
+    kept = _balance_emphasis(stripped[:last_end].rstrip())
+    logger.warning(
+        "Answer ended mid-sentence — dropped %d trailing chars: %r",
+        len(stripped) - len(kept),
+        stripped[last_end:][:120],
+    )
+    return kept
 
 
 def trim_to_sentence(text: str, limit: int = MAX_ANSWER_LEN) -> str:
@@ -130,7 +175,7 @@ async def enforce_length(
     `revise_fn` takes a prompt and returns the model's raw text. Truncation is
     only used if every revision attempt fails or the provider errors.
     """
-    answer = sanitize_answer(answer)
+    answer = drop_incomplete_tail(sanitize_answer(answer))
     if len(answer) <= limit:
         return answer
 
@@ -155,10 +200,15 @@ async def enforce_length(
                     answer=shortest,
                 )
             )
+        except TruncatedOutputError as e:
+            # The rewrite itself ran out of room. Another attempt asks for a
+            # shorter target, so it is worth taking.
+            logger.warning("%s revision attempt %d was truncated: %s", label, attempt + 1, e)
+            continue
         except Exception as e:
             logger.warning("%s revision attempt %d failed: %s", label, attempt + 1, e)
             break
-        revised = sanitize_answer(raw)
+        revised = drop_incomplete_tail(sanitize_answer(raw))
         if not revised:
             continue
         logger.info("%s revision attempt %d returned %d chars", label, attempt + 1, len(revised))

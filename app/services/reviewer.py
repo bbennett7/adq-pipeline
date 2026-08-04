@@ -4,7 +4,7 @@ from pathlib import Path
 
 from app.clients.anthropic import WEB_SEARCH_TOOL, get_client, send_with_continuation
 from app.jsonutil import extract_json_object
-from app.models.candidates import GeneratedCandidate, ReviewedCandidate
+from app.models.candidates import Category, GeneratedCandidate, ReviewedCandidate
 from app.models.moments import Moment
 from app.retry import with_retries
 
@@ -14,6 +14,35 @@ _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 SYSTEM_PROMPT = (_PROMPTS_DIR / "reviewer.txt").read_text().strip()
 
 TOP_N = 6
+# Every slate has to give the owner a real choice between a newsy question and
+# a basic one, so one slot of each is reserved before score ranking fills the
+# rest. Without this, a day where the news scores well produces six variations
+# on the same story — and the reverse on a quiet day.
+GUARANTEED_CATEGORIES = (Category.CURRENT, Category.FOUNDATIONAL)
+
+
+def _balanced_top_n(reviewed: list[ReviewedCandidate], n: int) -> list[ReviewedCandidate]:
+    """Take the top n by score, but never at the cost of losing a whole category.
+
+    The best candidate of each guaranteed category is seated first; the
+    remaining slots go to the highest scorers. The result stays sorted by
+    score, so "choose for me" and the owner's eye still see the best first.
+    """
+    by_score = sorted(reviewed, key=lambda r: r.score, reverse=True)
+    seated: list[ReviewedCandidate] = []
+    for category in GUARANTEED_CATEGORIES:
+        best = next((r for r in by_score if r.category == category), None)
+        if best is not None and len(seated) < n:
+            seated.append(best)
+    for candidate in by_score:
+        if len(seated) >= n:
+            break
+        if candidate not in seated:
+            seated.append(candidate)
+    missing = [c.value for c in GUARANTEED_CATEGORIES if not any(r.category == c for r in seated)]
+    if missing:
+        logger.warning("Slate has no %s candidate — none was generated", ", ".join(missing))
+    return sorted(seated, key=lambda r: r.score, reverse=True)
 
 
 def _build_review_input(
@@ -86,6 +115,7 @@ def _parse_review(raw: str, candidates: list[GeneratedCandidate]) -> list[Review
         reviewed.append(
             ReviewedCandidate(
                 agent=c.agent,
+                category=c.category,
                 question_md=c.question_md,
                 answer_md=c.answer_md,
                 score=max(1, min(10, int(entry["score"]))),
@@ -93,8 +123,7 @@ def _parse_review(raw: str, candidates: list[GeneratedCandidate]) -> list[Review
             )
         )
 
-    reviewed.sort(key=lambda r: r.score, reverse=True)
-    return reviewed[:TOP_N]
+    return _balanced_top_n(reviewed, TOP_N)
 
 
 async def _review_once(
@@ -140,7 +169,7 @@ async def review_candidates(
     near_repeats: dict[int, str] | None = None,
     topic: str | None = None,
 ) -> list[ReviewedCandidate]:
-    """Score all candidates with Claude. Returns top TOP_N by score."""
+    """Score all candidates with Claude. Returns a category-balanced top TOP_N."""
     if not candidates:
         raise ValueError("No candidates to review")
 
@@ -150,8 +179,8 @@ async def review_candidates(
         label="Candidate review",
     )
     logger.info(
-        "Review complete — top %d scores: %s",
+        "Review complete — slate of %d: %s",
         len(reviewed),
-        [r.score for r in reviewed],
+        [f"{r.category.value}:{r.score}" for r in reviewed],
     )
     return reviewed

@@ -3,6 +3,7 @@ import logging
 import openai
 
 from app.config import get_settings
+from app.errors import TruncatedOutputError
 
 logger = logging.getLogger(__name__)
 
@@ -93,4 +94,13 @@ async def create_text(
                 kwargs["input"] = f"{user}\n\nRespond with a single JSON object."
         response = await client.responses.create(**kwargs)
 
-    return (response.output_text or "").strip()
+    text = (response.output_text or "").strip()
+    # The Responses API reports a budget overrun as an incomplete response and
+    # still hands back the partial text, which reads as an answer that simply
+    # stops mid-sentence. Fail the call so it can be retried.
+    if getattr(response, "status", None) == "incomplete":
+        reason = getattr(getattr(response, "incomplete_details", None), "reason", None)
+        raise TruncatedOutputError(
+            f"OpenAI {model} response incomplete ({reason}) after {len(text)} chars"
+        )
+    return text
