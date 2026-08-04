@@ -16,9 +16,7 @@ def _response(text, stop_reason="end_turn"):
 
 
 def _client(*responses):
-    return SimpleNamespace(
-        messages=SimpleNamespace(create=AsyncMock(side_effect=list(responses)))
-    )
+    return SimpleNamespace(messages=SimpleNamespace(create=AsyncMock(side_effect=list(responses))))
 
 
 async def test_returns_the_text_when_the_model_finished():
@@ -53,6 +51,4 @@ async def test_a_response_still_truncated_after_continuing_is_a_failure():
     )
 
     with pytest.raises(TruncatedOutputError):
-        await send_with_continuation(
-            client, model="claude-sonnet-4-6", max_tokens=100, messages=[]
-        )
+        await send_with_continuation(client, model="claude-sonnet-4-6", max_tokens=100, messages=[])
