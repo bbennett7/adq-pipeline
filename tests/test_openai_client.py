@@ -6,6 +6,7 @@ import openai
 import pytest
 
 from app.clients import openai as openai_client
+from app.errors import TruncatedOutputError
 
 
 def _bad_request(message: str) -> openai.BadRequestError:
@@ -122,3 +123,36 @@ async def test_a_non_tool_bad_request_is_not_swallowed():
         await openai_client.create_text(
             model="gpt-4o", user="a", max_output_tokens=100, web_search=False
         )
+
+
+async def test_an_incomplete_response_is_a_failure_not_a_short_answer():
+    # The Responses API hands back the partial text alongside the incomplete
+    # status; published as-is it reads as an answer that stops mid-sentence.
+    create = AsyncMock(
+        return_value=SimpleNamespace(
+            output_text="Benchmarks stop being useful once every model",
+            status="incomplete",
+            incomplete_details=SimpleNamespace(reason="max_output_tokens"),
+        )
+    )
+
+    with (
+        patch.object(openai_client, "get_client", return_value=_client_with(create)),
+        pytest.raises(TruncatedOutputError, match="max_output_tokens"),
+    ):
+        await openai_client.create_text(
+            model="gpt-4o", user="q", max_output_tokens=32, web_search=False
+        )
+
+
+async def test_a_completed_response_passes_through():
+    create = AsyncMock(
+        return_value=SimpleNamespace(output_text="A complete answer.", status="completed")
+    )
+
+    with patch.object(openai_client, "get_client", return_value=_client_with(create)):
+        result = await openai_client.create_text(
+            model="gpt-4o", user="q", max_output_tokens=512, web_search=False
+        )
+
+    assert result == "A complete answer."

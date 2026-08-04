@@ -3,6 +3,7 @@ import logging
 import anthropic
 
 from app.config import get_settings
+from app.errors import TruncatedOutputError
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,11 @@ async def send_with_continuation(
         text += extract_text(response)
 
     if response.stop_reason == "max_tokens":
-        logger.warning("Response still truncated after %d continuations", max_continuations)
+        # Every caller either parses this as JSON or publishes it as prose;
+        # both are broken by a response that stops mid-token.
+        raise TruncatedOutputError(
+            f"Claude response still truncated after {max_continuations} "
+            f"continuation(s) ({len(text)} chars)"
+        )
 
     return text, response

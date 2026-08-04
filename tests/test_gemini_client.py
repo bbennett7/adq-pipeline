@@ -1,8 +1,10 @@
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
-from app.clients.gemini import extract_text
+from app.clients.gemini import extract_text, generate_text
+from app.errors import TruncatedOutputError
 
 
 def _response(parts, finish_reason="STOP"):
@@ -50,3 +52,35 @@ def test_ignores_non_text_parts():
 )
 def test_returns_empty_for_a_candidate_with_nothing_in_it(response):
     assert extract_text(response) == ""
+
+
+@pytest.mark.asyncio
+async def test_generate_text_fails_when_the_model_hit_its_token_ceiling(monkeypatch):
+    # A MAX_TOKENS stop means the answer breaks off mid-sentence, and it is far
+    # too short for any length check to notice.
+    response = _response([_part("An answer that stops right in the")], finish_reason="MAX_TOKENS")
+    client = SimpleNamespace(
+        aio=SimpleNamespace(
+            models=SimpleNamespace(generate_content=AsyncMock(return_value=response))
+        )
+    )
+    monkeypatch.setattr("app.clients.gemini.get_client", lambda: client)
+
+    with pytest.raises(TruncatedOutputError):
+        await generate_text(model="gemini-2.5-flash", contents="q", max_output_tokens=64)
+
+
+@pytest.mark.asyncio
+async def test_generate_text_returns_a_complete_answer(monkeypatch):
+    response = _response([_part("A complete answer.")])
+    client = SimpleNamespace(
+        aio=SimpleNamespace(
+            models=SimpleNamespace(generate_content=AsyncMock(return_value=response))
+        )
+    )
+    monkeypatch.setattr("app.clients.gemini.get_client", lambda: client)
+
+    assert (
+        await generate_text(model="gemini-2.5-flash", contents="q", max_output_tokens=1024)
+        == "A complete answer."
+    )

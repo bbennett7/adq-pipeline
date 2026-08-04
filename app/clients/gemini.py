@@ -4,6 +4,7 @@ from google import genai
 from google.genai import types
 
 from app.config import get_settings
+from app.errors import TruncatedOutputError
 
 logger = logging.getLogger(__name__)
 
@@ -83,4 +84,10 @@ async def generate_text(
     logger.info("Gemini %s: finish_reason=%s, %d chars", model, finish_reason, len(text))
     if not text:
         raise ValueError(f"Gemini returned empty content (finish_reason={finish_reason})")
+    # MAX_TOKENS means the model was still writing when the budget ran out, so
+    # the text stops mid-sentence — a failed call, not a short answer.
+    if str(finish_reason).endswith("MAX_TOKENS"):
+        raise TruncatedOutputError(
+            f"Gemini {model} hit max_output_tokens ({max_output_tokens}) after {len(text)} chars"
+        )
     return text.strip()
