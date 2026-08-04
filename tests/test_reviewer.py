@@ -4,8 +4,13 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.models.candidates import Agent, GeneratedCandidate, ReviewedCandidate
-from app.services.reviewer import _build_review_input, _parse_review, review_candidates
+from app.models.candidates import Agent, Category, GeneratedCandidate, ReviewedCandidate
+from app.services.reviewer import (
+    _balanced_top_n,
+    _build_review_input,
+    _parse_review,
+    review_candidates,
+)
 
 _Q1 = "Why do we have eyebrows if they do not actually keep the rain out of our eyes?"
 _A1 = (
@@ -221,3 +226,60 @@ async def test_review_candidates_retries_then_succeeds():
 
     assert len(reviewed) == 3
     assert mock_client.messages.create.call_count == 2
+
+
+def _reviewed(category, score):
+    return ReviewedCandidate(
+        agent=Agent.CLAUDE,
+        category=category,
+        question_md=_Q1,
+        answer_md=_A1,
+        score=score,
+        review_reason="reason",
+    )
+
+
+def test_balanced_top_n_seats_both_poles_before_ranking_by_score():
+    # A big news day: every high scorer is "current" and the only explainer
+    # scores at the bottom. It still has to make the slate.
+    reviewed = [
+        _reviewed(Category.CURRENT, 9),
+        _reviewed(Category.CURRENT, 8),
+        _reviewed(Category.CULTURAL, 7),
+        _reviewed(Category.CULTURAL, 6),
+        _reviewed(Category.FOUNDATIONAL, 2),
+    ]
+
+    slate = _balanced_top_n(reviewed, 3)
+
+    categories = [c.category for c in slate]
+    assert Category.CURRENT in categories
+    assert Category.FOUNDATIONAL in categories
+    assert [c.score for c in slate] == sorted((c.score for c in slate), reverse=True)
+
+
+def test_balanced_top_n_is_plain_score_ranking_when_the_slate_is_already_mixed():
+    reviewed = [
+        _reviewed(Category.CURRENT, 9),
+        _reviewed(Category.FOUNDATIONAL, 8),
+        _reviewed(Category.CULTURAL, 7),
+        _reviewed(Category.CULTURAL, 1),
+    ]
+
+    slate = _balanced_top_n(reviewed, 3)
+
+    assert [c.score for c in slate] == [9, 8, 7]
+
+
+def test_balanced_top_n_copes_with_a_missing_category():
+    reviewed = [_reviewed(Category.CULTURAL, 5), _reviewed(Category.CURRENT, 4)]
+
+    slate = _balanced_top_n(reviewed, 6)
+
+    assert len(slate) == 2
+
+
+def test_parse_review_carries_the_category_through():
+    reviewed = _parse_review(FAKE_REVIEW_JSON, CANDIDATES)
+
+    assert all(c.category is not None for c in reviewed)

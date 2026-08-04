@@ -81,6 +81,7 @@ class GroundCtrlClient:
             "candidates": [
                 {
                     "agent": c.agent.value,
+                    "category": c.category.value,
                     "questionMd": c.question_md,
                     "answerMd": c.answer_md,
                     "score": c.score,
