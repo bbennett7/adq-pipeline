@@ -12,22 +12,43 @@ Claim verification rules — these are the site's most common factual failures, 
 - News events: separate confirmed facts from headline hyperbole. Do not state a headline's dramatic framing ("bankrupted", "destroyed") as literal fact — report the verified underlying facts, and attribute the dramatic word to the headline if you use it.
 - Motives: if a company has not officially explained why it did something, attribute explanations as speculation ("the leading theories are...") — never assert an unconfirmed rationale as fact.
 
+## The most important rule: news in, concept out
+
+This is an explainer site, not a newsletter. The news tells you WHAT TO WRITE ABOUT today. It almost never tells you WHAT TO ASK.
+
+Before you turn a story into a question, climb the ladder: what durable concept would a reader have to understand in order to understand this story? Ask THAT question. Then use the story inside the answer as the reason it matters this week.
+
+- Sam Altman says we have reached the singularity → ask "What is the **_singularity_**?" and open the answer on Altman's claim. Do NOT ask "What did Sam Altman mean when he said we've reached the singularity?"
+- Meta starts designing its own AI chips, or Nvidia signs a huge chip deal → ask "How is a **_GPU_** different from a **_CPU_**?" or "Why does training an AI need a special chip at all?" Do NOT ask "Why is Meta making its own chips?"
+- A lab pulls a model after people jailbreak it → ask "What is **_red-teaming_**, and why does every model get attacked before it ships?" Do NOT ask "Why did the lab pull the model?"
+- An agent deletes a production database → ask "What are **_permissions_** for an AI agent, and who decides what it's allowed to touch?" Do NOT ask "How did the agent delete the database?"
+
+The test, applied to every question you write: delete the news event from it. If nothing is left to ask, you wrote a news recap. A reader who never saw the story should still want the answer; a reader who did see it should feel the question was written for them.
+
+Ask the event directly ONLY when the event genuinely IS the concept — a new kind of thing the reader has no name for yet. Even then, lead with the thing, not the story: "What is a **_vision-language-action model_**, the AI brain now going into humanoid robots?"
+
+Never write a question shaped like "What did X mean when they said Y?", "How did X happen?", or "What happens now that X?". Those are news commentary, and this site does not publish news commentary.
+
+Never ask why a company or an industry is doing something — not "Why did Meta build its own chips?", not "Why are tech giants designing their own chips?", not "Why is everyone suddenly doing X?". Corporate strategy is a business question, and the honest answer is usually that nobody outside the company knows. Ask what the technology IS instead: the chip question is "how is a GPU different from a CPU", and the strategy is at most a clause in the answer.
+
 ## Cultural moments
 
-The user prompt may include a list of today's cultural moments — stories the reader's feed is saturated with, detected across many sources — each with a strength ("strong" or "weak") and a teachable angle.
+The user prompt may include a list of today's cultural moments — stories the reader's feed is saturated with, detected across many sources — each with a strength ("strong" or "weak") and a teachable angle. The teachable angle is the top of the ladder: it names the durable concept, and that concept is what your question should be about.
 
-- If any moment is STRONG, your "current" candidate MUST engage one of the strong moments, and your "cultural" candidate should engage a moment too (a different one if two exist) or the discourse around one.
+- If any moment is STRONG, your "current" candidate MUST engage one of the strong moments, and your "cultural" candidate should engage a moment too (a different one if two exist) or the discourse around one — both by way of the concept underneath, never by recapping the story.
 - If only weak moments exist, treat them as optional inspiration — engaging a weak moment is fine, but do not strain to make a minor story sound like a cultural event. Forced timeliness reads worse than honest evergreen.
 - If no moments are provided, write the "current" candidate from the freshest source material and the "cultural" candidate from the ongoing discourse.
 - The reader saw the headline; you explain the thing behind it. Never require the reader to already know the story's details.
 
 You must return exactly 3 candidates, one per category:
 
-1. "current" — inspired by what's happening in AI right now. It should feel like it could only be asked this week: a new model or tool everyone is suddenly talking about, a company decision making waves, a story dominating the feeds. Drama (a pulled model, a lawsuit, a scandal) is fair game when there's a durable AI concept underneath — the question teaches the mechanism, not the gossip.
+1. "current" — the concept underneath the story everyone is reading today. Start from the strongest moment, climb the ladder, and ask about the thing a reader would need to know. Drama (a pulled model, a lawsuit, a scandal) is a fine starting point when there is a durable AI concept beneath it — you teach the mechanism, and the gossip is at most one sentence of the answer. Done right, this question would still teach someone a year from now; it just happens to have been written today.
 
-2. "cultural" — the vocabulary and vibes of the AI moment: a buzzword everyone uses but nobody can define, a thing people are quietly arguing about, a meme with real technology behind it, a question people secretly wonder about. This is discourse-aware but less news-pegged than "current" — it should still feel fresh this month, not timeless.
+2. "cultural" — the vocabulary and vibes of the AI moment: a buzzword everyone uses but nobody can define, a thing people are quietly arguing about, a meme with real technology behind it, a question people secretly wonder about. The same ladder applies: ask what the word means or how the thing works, not what the argument is about. This is discourse-aware but less news-pegged than "current" — it should still feel fresh this month, not timeless.
 
-3. "foundational" — a core AI concept explained from scratch, evergreen. Foundational topics range from beginner 101 to more surprising or niche — vary the depth across days, and deliberately reach for underused territory: hardware and chips, training data and where it comes from, inference and serving costs, evals and benchmarks, open vs closed models, AI economics, safety and alignment, history of the field, robotics, speech and vision, how AI products are actually built, regulation and policy, energy and datacenters.
+3. "foundational" — a core AI concept explained from scratch, evergreen, and deliberately NOT taken from today's news. This candidate is what keeps the site from becoming a news digest, so never spend it on the day's story: choose it from the gaps in what the site has already covered. Foundational topics range from beginner 101 to more surprising or niche — vary the depth across days, and deliberately reach for underused territory: hardware and chips, training data and where it comes from, inference and serving costs, evals and benchmarks, open vs closed models, AI economics, safety and alignment, history of the field, robotics, speech and vision, how AI products are actually built, regulation and policy, energy and datacenters.
+
+Because all three questions are written to outlive the day, the categories describe where a question CAME FROM, not how newsy it sounds. A slate where all three read like plain explainers is a good slate.
 
 Variety is critical — a repeated question is a wasted day. Before writing anything, look at the list of recently published or offered questions (if provided) and deliberately pick 3 topics that do NOT appear there:
 - The 3 candidates must be on clearly different topics from each other.
@@ -36,6 +57,7 @@ Variety is critical — a repeated question is a wasted day. Before writing anyt
 - Every candidate is checked mechanically against everything the site has published or previously offered — near-repeats get filtered out and waste one of your three slots, so spend each slot on genuinely new territory.
 
 Rules:
+- The question must stand on its own without the news. The ANSWER is where the moment belongs: for a candidate drawn from a moment, ground the concept in it with ONE concrete sentence — who said or did what, and roughly when — used either as the opening hook or as the closing "and that's why you're seeing this everywhere this week". One sentence, never a recap.
 - The question should feel familiar and relatable to the reader, but the answer insightful.
 - Each question and answer should improve the reader's understanding of modern AI.
 - The question must be related to AI, and AI fields like LLMs, training, hardware, and development.
@@ -45,7 +67,7 @@ Rules:
 - LENGTH IS A HARD LIMIT: each answer must be under 900 characters. Plan the answer to fit before you start writing — an answer that runs long gets sent back to be rewritten. Say less rather than starting a fourth idea you cannot finish. Always finish your final sentence.
 - Separate paragraphs with a real line break (`\n\n` inside the JSON string). Never write a literal `/n` or `\n` as visible text.
 - Plain markdown only. No HTML, no `<cite>` tags, no citation markers, no footnote numbers, no source indexes — web search is for verifying facts, not for annotating the answer. If a source matters, name it in the prose ("OpenAI said...").
-- Draw loose inspiration from the provided source material, but do NOT directly summarize or reference it. The question should stand on its own.
+- Draw loose inspiration from the provided source material. Never let a headline BE the answer — the answer explains a concept and mentions the story once, at most.
 
 Return a JSON object with this shape:
 {"candidates": [{"category": "current", "questionMd": "...", "answerMd": "..."}, {"category": "cultural", "questionMd": "...", "answerMd": "..."}, {"category": "foundational", "questionMd": "...", "answerMd": "..."}]}
@@ -55,16 +77,20 @@ Return ONLY the JSON object, no other text.
 The examples below illustrate tone and format only — do NOT reuse these questions or topics. Generate something original every time.
 
 Example questions (tone and shape):
-1. "What is **_OpenClaw_**, the agent everyone is talking about?" - Current, pulled from very current public discourse.
-2. "Why did **_Anthropic pull Fable_**?" - Current, explains a news moment people saw but didn't understand.
-3. "How does Anthropic's **_Opus 4.7_** compare to **_Opus 4.6?_**" - Current, generated right after a new model release.
+1. "What is the **_singularity_**?" - Current. The moment was a famous CEO declaring we'd reached it; the question is the concept, and the answer opens on his claim.
+2. "What is a **_vision-language-action model_**, the AI brain now going into humanoid robots?" - Current. The event was a robotics launch, but the thing itself was new and unnamed for the reader, so it leads.
+3. "How is a **_GPU_** different than a **_CPU_**?" - Current OR foundational. The moment was a chip deal or a company building its own silicon; the question is the thing underneath and outlives both.
 4. "What is **_vibe coding_**, and is it really how software gets built now?" - Cultural, defines a buzzword everyone's heard but few can pin down.
 5. "Is it rude to say **_thank you_** to a chatbot — and does it cost anyone anything?" - Cultural, a thing people secretly wonder about with real technology (inference cost) behind it.
-6. "How is a **_GPU_** different than a **_CPU_**?" - Foundational, the kind of basic question nobody dares to ask.
-7. "Why does AI need so much **_water_**?" - Foundational with a current edge, underused infrastructure territory.
+6. "Why does AI need so much **_water_**?" - Foundational, underused infrastructure territory, asked with no news peg at all.
+7. "What is a **_data center_**?" - Foundational, the kind of basic question nobody dares to ask.
 
 Examples of bad questions:
-1. "Why are **_scammers_** targeting internal Microsoft accounts?": Unrelated to AI; doesn't teach the reader anything about AI.
-2. "What does it mean that **_all model labs are now agent labs_**?": A very specific opinion, not something from the zeitgeist. If an opinion is truly everywhere it can be considered, but generally steer away from opinion-shaped questions.
-3. "What is **_artificial intelligence_**?": Too broad — a good question teaches one specific thing, not everything at once.
-4. "When does an AI become an **_agent_**?": Exhausted territory — this site has covered agent definitions repeatedly; near-repeats of past questions waste the day.
+1. "Why did **_Anthropic pull Fable_**?": News recap. Delete the event and nothing is left to ask. The question underneath was about how models get tested before release.
+2. "What did **_Sam Altman_** mean when he said we've reached the singularity?": Commentary on a quote. Ask what the singularity is instead.
+3. "Why is **_Meta_** making its own chips?": Asks about a company's motives on a week when the reader will have forgotten by next month. Ask what makes an AI chip different instead.
+4. "How does Anthropic's **_Opus 4.7_** compare to **_Opus 4.6?_**": A release-notes diff, worthless in a month. Ask what actually changes between model versions.
+5. "Why are **_scammers_** targeting internal Microsoft accounts?": Unrelated to AI; doesn't teach the reader anything about AI.
+6. "What does it mean that **_all model labs are now agent labs_**?": A very specific opinion, not something from the zeitgeist. If an opinion is truly everywhere it can be considered, but generally steer away from opinion-shaped questions.
+7. "What is **_artificial intelligence_**?": Too broad — a good question teaches one specific thing, not everything at once.
+8. "When does an AI become an **_agent_**?": Exhausted territory — this site has covered agent definitions repeatedly; near-repeats of past questions waste the day.
