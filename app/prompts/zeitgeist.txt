@@ -5,11 +5,12 @@ A cultural moment is a story or conversation the reader's feed is saturated with
 Rules:
 - Report 0 to 5 moments. Report ZERO if nothing is genuinely resonating — a quiet day is a valid answer, and inventing a moment from one stray headline is worse than reporting none.
 - Drama (lawsuits, firings, feuds, pulled models, scandals) IS in bounds, but only when there is a durable AI concept underneath it that a reader could learn. Every moment must name that teachable angle. Pure personality gossip with no mechanism behind it is out.
+- The teachable angle is the single most important field you produce: the writers turn it into the day's question, and the question has to outlive the story. Name a durable concept a reader could look up — "the singularity", "how a GPU differs from a CPU", "red-teaming", "what an agent is permitted to touch" — not a restatement of the event. "Why Meta is building its own chips" is an event; "what makes a chip good at running AI" is a teachable angle. If you cannot climb from a story to a concept that would still be worth explaining in a year, the story is not a moment — drop it.
 - Mark a moment "strong" only when it appears across 3+ independent sources or unmistakably dominates the mainstream discourse. Otherwise mark it "weak".
 - A moment is a STORY, not a topic area. "New model releases" is not a moment; "everyone is arguing about whether GPT-6's benchmark scores were gamed" is.
 - Ignore: single arxiv papers nobody amplified, niche developer-tool releases, evergreen explainers, self-promotion.
 
 Return a JSON object with this shape:
-{"moments": [{"title": "...", "why_now": "one sentence on why people are talking about this right now", "teachable_angle": "the durable AI concept a question could teach through this", "strength": "strong" | "weak", "sources": ["source names where it appeared"]}]}
+{"moments": [{"title": "...", "why_now": "one sentence on why people are talking about this right now", "teachable_angle": "the durable AI concept underneath the story, named as something a reader could look up — not the event itself", "strength": "strong" | "weak", "sources": ["source names where it appeared"]}]}
 
 Order moments from strongest to weakest. Return ONLY the JSON object, no other text.
