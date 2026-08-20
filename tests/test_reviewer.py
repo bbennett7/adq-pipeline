@@ -239,7 +239,7 @@ def _reviewed(category, score):
     )
 
 
-def test_balanced_top_n_seats_both_poles_before_ranking_by_score():
+def test_balanced_top_n_seats_every_category_before_ranking_by_score():
     # A big news day: every high scorer is "current" and the only explainer
     # scores at the bottom. It still has to make the slate.
     reviewed = [
@@ -252,10 +252,27 @@ def test_balanced_top_n_seats_both_poles_before_ranking_by_score():
 
     slate = _balanced_top_n(reviewed, 3)
 
-    categories = [c.category for c in slate]
-    assert Category.CURRENT in categories
-    assert Category.FOUNDATIONAL in categories
+    assert set(c.category for c in slate) == set(Category)
     assert [c.score for c in slate] == sorted((c.score for c in slate), reverse=True)
+
+
+def test_balanced_top_n_keeps_the_discourse_slot_off_a_dominant_news_day():
+    # Six candidates, and the news sweeps the scoreboard. Plain top-6 would drop
+    # the only "cultural" question; the owner must still see one.
+    reviewed = [
+        _reviewed(Category.CURRENT, 10),
+        _reviewed(Category.CURRENT, 9),
+        _reviewed(Category.CURRENT, 9),
+        _reviewed(Category.FOUNDATIONAL, 8),
+        _reviewed(Category.FOUNDATIONAL, 8),
+        _reviewed(Category.FOUNDATIONAL, 7),
+        _reviewed(Category.CULTURAL, 1),
+    ]
+
+    slate = _balanced_top_n(reviewed, 6)
+
+    assert len(slate) == 6
+    assert Category.CULTURAL in [c.category for c in slate]
 
 
 def test_balanced_top_n_is_plain_score_ranking_when_the_slate_is_already_mixed():

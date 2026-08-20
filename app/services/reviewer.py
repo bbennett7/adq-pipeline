@@ -14,11 +14,12 @@ _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 SYSTEM_PROMPT = (_PROMPTS_DIR / "reviewer.txt").read_text().strip()
 
 TOP_N = 6
-# Every slate has to give the owner a real choice between a newsy question and
-# a basic one, so one slot of each is reserved before score ranking fills the
-# rest. Without this, a day where the news scores well produces six variations
-# on the same story — and the reverse on a quiet day.
-GUARANTEED_CATEGORIES = (Category.CURRENT, Category.FOUNDATIONAL)
+# Every slate has to give the owner a real choice across all three ways a
+# question gets found — today's story, the ongoing discourse, and the evergreen
+# gaps — so one slot of each is reserved before score ranking fills the rest.
+# Without this, a day where the news scores well produces six variations on the
+# same story, and the site reads as a news digest instead of an explainer.
+GUARANTEED_CATEGORIES = (Category.CURRENT, Category.CULTURAL, Category.FOUNDATIONAL)
 
 
 def _balanced_top_n(reviewed: list[ReviewedCandidate], n: int) -> list[ReviewedCandidate]:
@@ -28,21 +29,26 @@ def _balanced_top_n(reviewed: list[ReviewedCandidate], n: int) -> list[ReviewedC
     remaining slots go to the highest scorers. The result stays sorted by
     score, so "choose for me" and the owner's eye still see the best first.
     """
-    by_score = sorted(reviewed, key=lambda r: r.score, reverse=True)
-    seated: list[ReviewedCandidate] = []
+    # Seat by position, not by value: two candidates can compare equal as models
+    # (same category and score, and identical text does happen across providers),
+    # and membership-testing the objects would silently collapse them into one
+    # and hand back a short slate.
+    by_score = sorted(range(len(reviewed)), key=lambda i: reviewed[i].score, reverse=True)
+    seated: list[int] = []
     for category in GUARANTEED_CATEGORIES:
-        best = next((r for r in by_score if r.category == category), None)
+        best = next((i for i in by_score if reviewed[i].category == category), None)
         if best is not None and len(seated) < n:
             seated.append(best)
-    for candidate in by_score:
+    for i in by_score:
         if len(seated) >= n:
             break
-        if candidate not in seated:
-            seated.append(candidate)
-    missing = [c.value for c in GUARANTEED_CATEGORIES if not any(r.category == c for r in seated)]
+        if i not in seated:
+            seated.append(i)
+    slate = [reviewed[i] for i in seated]
+    missing = [c.value for c in GUARANTEED_CATEGORIES if not any(r.category == c for r in slate)]
     if missing:
         logger.warning("Slate has no %s candidate — none was generated", ", ".join(missing))
-    return sorted(seated, key=lambda r: r.score, reverse=True)
+    return sorted(slate, key=lambda r: r.score, reverse=True)
 
 
 def _build_review_input(
